@@ -1,0 +1,419 @@
+import base64
+import hashlib
+import html
+import mimetypes
+import re
+import reprlib
+import struct
+import tempfile
+import unicodedata
+from pathlib import Path
+from urllib.parse import urlparse
+
+import orjson
+from curl_cffi.requests import AsyncSession
+from loguru import logger
+
+from app.models import FunctionCall, Message, ToolCall
+
+VALID_TAG_ROLES = {"user", "assistant", "system", "tool"}
+TOOL_WRAP_HINT = (
+    "\n\n### SYSTEM: TOOL CALLING PROTOCOL (MANDATORY) ###\n"
+    "If tool execution is required, you MUST adhere to this EXACT protocol. No exceptions.\n\n"
+    "1. OUTPUT RESTRICTION: Your response MUST contain ONLY the [ToolCalls] block. Conversational filler, preambles, or concluding remarks are STRICTLY PROHIBITED.\n"
+    "2. WRAPPING LOGIC: Every parameter value MUST be enclosed in a markdown code block. Use 3 backticks (```) by default. If the value contains backticks, the outer fence MUST be longer than any sequence inside (e.g., ````).\n"
+    "3. TAG SYMMETRY: All tags MUST be balanced and closed in the exact reverse order of opening. Incomplete or unclosed blocks are strictly prohibited.\n\n"
+    "REQUIRED SYNTAX:\n"
+    "[ToolCalls]\n"
+    "[Call:tool_name]\n"
+    "[CallParameter:parameter_name]\n"
+    "```\n"
+    "value\n"
+    "```\n"
+    "[/CallParameter]\n"
+    "[/Call]\n"
+    "[/ToolCalls]\n\n"
+    "CRITICAL: Do NOT mix natural language with protocol tags. Either respond naturally OR provide the protocol block alone. There is no middle ground.\n"
+)
+TOOL_BLOCK_RE = re.compile(
+    r"\\?\[\s*ToolCalls\s*\\?]\s*(.*?)\s*\\?\[\s*\\?/\s*ToolCalls\s*\\?]",
+    re.DOTALL | re.IGNORECASE,
+)
+TOOL_CALL_RE = re.compile(
+    r"\\?\[\s*Call\s*\\?:\s*(?P<name>(?:[^]\\]|\\.)+)\s*\\?]\s*(?P<body>.*?)\s*\\?\[\s*\\?/\s*Call\s*\\?]",
+    re.DOTALL | re.IGNORECASE,
+)
+RESPONSE_BLOCK_RE = re.compile(
+    r"\\?\[\s*ToolResults\s*\\?]\s*(.*?)\s*\\?\[\s*\\?/\s*ToolResults\s*\\?]",
+    re.DOTALL | re.IGNORECASE,
+)
+RESPONSE_ITEM_RE = re.compile(
+    r"\\?\[\s*Result\s*\\?:\s*(?P<name>(?:[^]\\]|\\.)+)\s*\\?]\s*(?P<body>.*?)\s*\\?\[\s*\\?/\s*Result\s*\\?]",
+    re.DOTALL | re.IGNORECASE,
+)
+TAGGED_ARG_RE = re.compile(
+    r"\\?\[\s*CallParameter\s*\\?:\s*(?P<name>(?:[^]\\]|\\.)+)\s*\\?]\s*(?P<body>.*?)\s*\\?\[\s*\\?/\s*CallParameter\s*\\?]",
+    re.DOTALL | re.IGNORECASE,
+)
+TAGGED_RESULT_RE = re.compile(
+    r"\\?\[\s*ToolResult\s*\\?]\s*(.*?)\s*\\?\[\s*\\?/\s*ToolResult\s*\\?]",
+    re.DOTALL | re.IGNORECASE,
+)
+CONTROL_TOKEN_RE = re.compile(
+    r"\\?\s*<\s*\\?\|\s*im\s*\\?_(?:start|end)\s*\\?\|\s*>\s*", re.IGNORECASE
+)
+CHATML_START_RE = re.compile(
+    r"\\?\s*<\s*\\?\|\s*im\s*\\?_start\s*\\?\|\s*>\s*(\w+)\s*\n?", re.IGNORECASE
+)
+CHATML_END_RE = re.compile(r"\\?\s*<\s*\\?\|\s*im\s*\\?_end\s*\\?\|\s*>\s*", re.IGNORECASE)
+COMMONMARK_UNESCAPE_RE = re.compile(r"\\([!\"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~])")
+PARAM_FENCE_RE = re.compile(r"^(?P<fence>`{3,})")
+TOOL_HINT_STRIPPED = TOOL_WRAP_HINT.strip()
+_hint_lines = [line.strip() for line in TOOL_WRAP_HINT.split("\n") if line.strip()]
+TOOL_HINT_LINE_START = _hint_lines[0] if _hint_lines else ""
+TOOL_HINT_LINE_END = _hint_lines[-1] if _hint_lines else ""
+TOOL_HINT_START_ESC = re.escape(TOOL_HINT_LINE_START) if TOOL_HINT_LINE_START else ""
+TOOL_HINT_END_ESC = re.escape(TOOL_HINT_LINE_END) if TOOL_HINT_LINE_END else ""
+
+HINT_FULL_RE = (
+    re.compile(rf"\n?{TOOL_HINT_START_ESC}:?.*?{TOOL_HINT_END_ESC}\n?", re.DOTALL | re.IGNORECASE)
+    if TOOL_HINT_START_ESC and TOOL_HINT_END_ESC
+    else None
+)
+HINT_START_RE = (
+    re.compile(rf"\n?{TOOL_HINT_START_ESC}:?\s*", re.IGNORECASE) if TOOL_HINT_START_ESC else None
+)
+HINT_END_RE = (
+    re.compile(rf"\s*{TOOL_HINT_END_ESC}\n?", re.IGNORECASE) if TOOL_HINT_END_ESC else None
+)
+
+# --- Streaming Specific Patterns ---
+_START_PATTERNS = {
+    "TOOL": r"\\?\[\s*ToolCalls\s*\\?\]",
+    "ORPHAN": r"\\?\[\s*Call\s*\\?:\s*(?:[^\]\\]|\\.)+\s*\\?\]",
+    "RESP": r"\\?\[\s*ToolResults\s*\\?\]",
+    "ARG": r"\\?\[\s*CallParameter\s*\\?:\s*(?:[^\]\\]|\\.)+\s*\\?\]",
+    "RESULT": r"\\?\[\s*ToolResult\s*\\?\]",
+    "ITEM": r"\\?\[\s*Result\s*\\?:\s*(?:[^\]\\]|\\.)+\s*\\?\]",
+    "TAG": r"\\?\s*<\s*\\?\|\s*im\s*\\?_start\s*\\?\|\s*>",
+}
+
+_PROTOCOL_ENDS = (
+    r"\\?\[\s*\\?/\s*(?:ToolCalls|Call|ToolResults|CallParameter|ToolResult|Result)\s*\\?\]"
+)
+_TAG_END = r"\\?\s*<\s*\\?\|\s*im\s*\\?_end\s*\\?\|\s*>"
+
+if TOOL_HINT_START_ESC and TOOL_HINT_END_ESC:
+    _START_PATTERNS["HINT"] = rf"\n?{TOOL_HINT_START_ESC}:?\s*"
+
+_master_parts = [f"(?P<{name}_START>{pattern})" for name, pattern in _START_PATTERNS.items()]
+_master_parts.append(f"(?P<PROTOCOL_EXIT>{_PROTOCOL_ENDS})")
+_master_parts.append(f"(?P<TAG_EXIT>{_TAG_END})")
+
+if TOOL_HINT_START_ESC and TOOL_HINT_END_ESC:
+    _master_parts.append(f"(?P<HINT_EXIT>{TOOL_HINT_END_ESC}\n?)")
+
+STREAM_MASTER_RE = re.compile("|".join(_master_parts), re.IGNORECASE)
+STREAM_TAIL_RE = re.compile(
+    r"(?:\\|\\?\[[TCRP/]?\s*[^]]*|\\?\s*<\s*\\?\|?\s*i?\s*m?\s*\\?_?(?:s?t?a?r?t?|e?n?d?)\s*\\?\|?\s*>?|)$",
+    re.IGNORECASE,
+)
+
+
+def add_tag(role: str, content: str, unclose: bool = False) -> str:
+    """Surround content with ChatML role tags."""
+    if role not in VALID_TAG_ROLES:
+        logger.warning(f"Unknown role: {role}, returning content without tags")
+        return content
+
+    return f"<|im_start|>{role}\n{content}" + ("\n<|im_end|>" if not unclose else "")
+
+
+def normalize_llm_text(s: str) -> str:
+    """
+    Safely normalize LLM-generated text for both display and hashing.
+    Includes: HTML unescaping, NFC normalization, and line ending standardization.
+    """
+    if not s:
+        return ""
+
+    s = html.unescape(s)
+    s = unicodedata.normalize("NFC", s)
+    s = s.replace("\r\n", "\n").replace("\r", "\n")
+
+    return s
+
+
+def unescape_text(s: str) -> str:
+    """Remove CommonMark backslash escapes from LLM-generated text."""
+    if not s:
+        return ""
+    return COMMONMARK_UNESCAPE_RE.sub(r"\1", s)
+
+
+def _strip_param_fences(s: str) -> str:
+    """
+    Remove one layer of outermost Markdown code fences,
+    supporting nested blocks by detecting variable fence lengths.
+    """
+    s = s.strip()
+    if not s:
+        return ""
+
+    match = PARAM_FENCE_RE.match(s)
+    if not match or not s.endswith(match.group("fence")):
+        return s
+
+    fence = match.group("fence")
+    lines = s.splitlines()
+    if len(lines) >= 3 and lines[-1].strip() == fence:
+        return "\n".join(lines[1:-1])
+
+    return s[len(fence) : -len(fence)].strip()
+
+
+def estimate_tokens(text: str | None) -> int:
+    """Estimate the number of tokens heuristically based on character count."""
+    if not text:
+        return 0
+    return int(len(text) / 3)
+
+
+async def save_file_to_tempfile(
+    file_in_base64: str, file_name: str = "", tempdir: Path | None = None
+) -> Path:
+    """Decode base64 file data and save to a temporary file."""
+    with tempfile.NamedTemporaryFile(
+        delete=False, suffix=Path(file_name).suffix if file_name else ".bin", dir=tempdir
+    ) as tmp:
+        tmp.write(base64.b64decode(file_in_base64))
+        path = Path(tmp.name)
+    return path
+
+
+async def save_url_to_tempfile(url: str, tempdir: Path | None = None) -> Path:
+    """Download content from a URL and save to a temporary file."""
+    data: bytes | None = None
+    suffix: str | None = None
+    if url.startswith("data:image/"):
+        metadata_part = url.split(",")[0]
+        mime_type = metadata_part.split(":")[1].split(";")[0]
+        data = base64.b64decode(url.split(",")[1])
+        suffix = mimetypes.guess_extension(mime_type) or f".{mime_type.split('/')[1]}"
+    else:
+        async with AsyncSession(impersonate="chrome", allow_redirects=True) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            data = resp.content
+            content_type = resp.headers.get("content-type")
+            if content_type:
+                suffix = mimetypes.guess_extension(content_type.split(";")[0].strip())
+            if not suffix:
+                suffix = Path(urlparse(url).path).suffix or ".bin"
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix, dir=tempdir) as tmp:
+        tmp.write(data)
+        path = Path(tmp.name)
+    return path
+
+
+def strip_tagged_blocks(text: str) -> str:
+    """
+    Remove ChatML role blocks (<|im_start|>role...<|im_end|>).
+    Role 'tool' blocks are removed entirely; others have markers stripped but content preserved.
+    """
+    if not text:
+        return text
+
+    result = []
+    idx = 0
+    while idx < len(text):
+        match_start = CHATML_START_RE.search(text, idx)
+        if not match_start:
+            result.append(text[idx:])
+            break
+
+        result.append(text[idx : match_start.start()])
+        role = match_start.group(1).lower()
+        content_start = match_start.end()
+
+        match_end = CHATML_END_RE.search(text, content_start)
+        if not match_end:
+            if role != "tool":
+                result.append(text[content_start:])
+            break
+
+        if role != "tool":
+            result.append(text[content_start : match_end.start()])
+        idx = match_end.end()
+
+    return "".join(result)
+
+
+def strip_system_hints(text: str) -> str:
+    """Remove system hints, ChatML tags, and technical protocol markers from text."""
+    if not text:
+        return text
+
+    t_unescaped = unescape_text(text)
+
+    cleaned = t_unescaped.replace(TOOL_WRAP_HINT, "").replace(TOOL_HINT_STRIPPED, "")
+
+    if HINT_FULL_RE:
+        cleaned = HINT_FULL_RE.sub("", cleaned)
+    if HINT_START_RE:
+        cleaned = HINT_START_RE.sub("", cleaned)
+    if HINT_END_RE:
+        cleaned = HINT_END_RE.sub("", cleaned)
+
+    cleaned = strip_tagged_blocks(cleaned)
+    cleaned = CONTROL_TOKEN_RE.sub("", cleaned)
+    cleaned = TOOL_BLOCK_RE.sub("", cleaned)
+    cleaned = TOOL_CALL_RE.sub("", cleaned)
+    cleaned = RESPONSE_BLOCK_RE.sub("", cleaned)
+    cleaned = RESPONSE_ITEM_RE.sub("", cleaned)
+    cleaned = TAGGED_ARG_RE.sub("", cleaned)
+    cleaned = TAGGED_RESULT_RE.sub("", cleaned)
+
+    return cleaned
+
+
+def _process_tools_internal(text: str, extract: bool = True) -> tuple[str, list[ToolCall]]:
+    """
+    Extract tool metadata and return text stripped of technical markers.
+    Arguments are parsed into JSON and assigned deterministic call IDs.
+    """
+    if not text:
+        return text, []
+
+    tool_calls: list[ToolCall] = []
+
+    def _create_tool_call(name: str, raw_args: str) -> None:
+        if not extract:
+            return
+        if not name:
+            logger.warning("Encountered tool_call without a function name.")
+            return
+
+        name = unescape_text(name.strip())
+        raw_args = unescape_text(raw_args)
+
+        arg_matches = TAGGED_ARG_RE.findall(raw_args)
+        if arg_matches:
+            args_dict = {
+                arg_name.strip(): _strip_param_fences(arg_value)
+                for arg_name, arg_value in arg_matches
+            }
+            arguments = orjson.dumps(args_dict).decode("utf-8")
+            logger.debug(f"Successfully parsed {len(args_dict)} arguments for tool: {name}")
+        else:
+            cleaned_raw = raw_args.strip()
+            if not cleaned_raw:
+                logger.debug(f"Successfully parsed 0 arguments for tool: {name}")
+            else:
+                logger.warning(
+                    f"Malformed arguments for tool '{name}'. Text found but no valid tags: {reprlib.repr(cleaned_raw)}"
+                )
+            arguments = "{}"
+
+        index = len(tool_calls)
+        seed = f"{name}:{arguments}:{index}".encode()
+        call_id = f"call_{hashlib.sha256(seed).hexdigest()[:24]}"
+
+        tool_calls.append(
+            ToolCall(
+                id=call_id,
+                type="function",
+                function=FunctionCall(name=name, arguments=arguments),
+            )
+        )
+
+    for match in TOOL_CALL_RE.finditer(text):
+        _create_tool_call(match.group(1), match.group(2))
+
+    cleaned = strip_system_hints(text)
+    return cleaned, tool_calls
+
+
+def remove_tool_call_blocks(text: str) -> str:
+    """Strip tool call blocks from text for display."""
+    cleaned, _ = _process_tools_internal(text, extract=False)
+    return cleaned
+
+
+def extract_tool_calls(text: str) -> tuple[str, list[ToolCall]]:
+    """Extract tool calls and return cleaned text."""
+    return _process_tools_internal(text, extract=True)
+
+
+def text_from_message(message: Message) -> str:
+    """Concatenate text and tool arguments from a message for token estimation."""
+    base_text = ""
+    if isinstance(message.content, str):
+        base_text = message.content
+    elif isinstance(message.content, list):
+        base_text = "\n".join(
+            item.text or "" for item in message.content if getattr(item, "type", "") == "text"
+        )
+    elif message.content is None:
+        base_text = ""
+
+    if message.tool_calls:
+        tool_arg_text = "".join(call.function.arguments or "" for call in message.tool_calls)
+        base_text = f"{base_text}\n{tool_arg_text}" if base_text else tool_arg_text
+
+    return base_text
+
+
+def extract_image_dimensions(data: bytes) -> tuple[int | None, int | None]:
+    """Return image dimensions (width, height) if PNG or JPEG headers are present."""
+    if len(data) >= 24 and data.startswith(b"\x89PNG\r\n\x1a\n"):
+        try:
+            width, height = struct.unpack(">II", data[16:24])
+            return int(width), int(height)
+        except struct.error:
+            return None, None
+
+    if len(data) >= 4 and data[0:2] == b"\xff\xd8":
+        idx = 2
+        length = len(data)
+        sof_markers = {0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF}
+        while idx < length:
+            if data[idx] != 0xFF:
+                idx += 1
+                continue
+            while idx < length and data[idx] == 0xFF:
+                idx += 1
+            if idx >= length:
+                break
+            marker = data[idx]
+            idx += 1
+            if marker in (0xD8, 0xD9, 0x01) or 0xD0 <= marker <= 0xD7:
+                continue
+            if idx + 1 >= length:
+                break
+            segment_length = (data[idx] << 8) + data[idx + 1]
+            idx += 2
+            if segment_length < 2:
+                break
+            if marker in sof_markers:
+                if idx + 4 < length:
+                    height = (data[idx + 1] << 8) + data[idx + 2]
+                    width = (data[idx + 3] << 8) + data[idx + 4]
+                    return int(width), int(height)
+                break
+            idx += segment_length - 2
+    return None, None
+
+
+def detect_image_extension(data: bytes) -> str | None:
+    """Detect image extension from magic bytes."""
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return ".png"
+    if data.startswith(b"\xff\xd8"):
+        return ".jpg"
+    if data.startswith(b"GIF8"):
+        return ".gif"
+    if data.startswith(b"RIFF") and data[8:12] == b"WEBP":
+        return ".webp"
+    return None

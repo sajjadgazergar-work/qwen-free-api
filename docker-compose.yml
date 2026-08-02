@@ -7,11 +7,14 @@ services:
       - .env
     environment:
       DEEPSEEK_BASE_URL: http://deepseek:22217
+      GEMINI_BASE_URL: http://gemini:8000
+      GEMINI_MANAGEMENT_KEY: ${GEMINI_MANAGEMENT_KEY:-change-me-gemini-management-key}
       CONDUIT_DATA_DIR: /app/data
     volumes:
       - ./data/qwen:/app/data
     depends_on:
       - deepseek
+      - gemini
     restart: unless-stopped
 
   deepseek:
@@ -25,4 +28,19 @@ services:
       RUST_LOG: info
     expose:
       - "22217"
+    restart: unless-stopped
+
+  gemini:
+    build:
+      context: ./providers/gemini
+    volumes:
+      - ./data/gemini:/app/data
+      - ./data/gemini-cache:/app/cache
+      - ./config/gemini.yaml:/app/config/config.yaml
+    environment:
+      CONFIG_PATH: /app/config/config.yaml
+      GEMINI_COOKIE_PATH: /app/cache
+      CONDUIT_MANAGEMENT_KEY: ${GEMINI_MANAGEMENT_KEY:-change-me-gemini-management-key}
+    expose:
+      - "8000"
     restart: unless-stopped

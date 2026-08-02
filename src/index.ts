@@ -26,6 +26,14 @@ import {
   proxyDeepSeekChat,
   removeDeepSeekAccount,
 } from './providers/deepseek';
+import {
+  addGeminiAccount,
+  geminiModels,
+  getGeminiAccounts,
+  getGeminiStatus,
+  proxyGeminiChat,
+  removeGeminiAccount,
+} from './providers/gemini';
 
 dotenv.config();
 
@@ -829,17 +837,18 @@ app.get('/', (req: Request, res: Response) => {
   if (acceptHeader.includes('text/html')) {
     return res.redirect('/admin');
   }
-  res.send('Conduit is running with Qwen and DeepSeek providers. Use POST /v1/chat/completions or visit /admin.');
+  res.send('Conduit is running with Qwen, DeepSeek, and Gemini providers. Use POST /v1/chat/completions or visit /admin.');
 });
 
 // Fetch metrics & stats
 app.get('/admin/api/providers', async (_req: Request, res: Response) => {
-  const deepseek = await getDeepSeekStatus();
+  const [deepseek, gemini] = await Promise.all([getDeepSeekStatus(), getGeminiStatus()]);
   res.json({
     object: 'list',
     data: [
       { id: 'qwen', name: 'Qwen', mode: 'native', enabled: accountPool.length > 0, healthy: accountPool.some(a => a.ok), accounts: accountPool.length },
       { ...deepseek, name: 'DeepSeek', mode: 'managed-service' },
+      { ...gemini, name: 'Gemini', mode: 'managed-service' },
     ],
   });
 });
@@ -943,6 +952,21 @@ app.delete('/admin/api/providers/deepseek/accounts/:index', async (req: Request,
   } catch (err: any) { res.status(400).json({ success: false, error: err.message }); }
 });
 
+app.get('/admin/api/providers/gemini/accounts', async (_req: Request, res: Response) => {
+  try { res.json({ success: true, accounts: await getGeminiAccounts() }); }
+  catch (err: any) { res.status(502).json({ success: false, error: err.message }); }
+});
+
+app.post('/admin/api/providers/gemini/accounts', async (req: Request, res: Response) => {
+  try { res.json({ success: true, account: await addGeminiAccount(req.body || {}) }); }
+  catch (err: any) { res.status(400).json({ success: false, error: err.message }); }
+});
+
+app.delete('/admin/api/providers/gemini/accounts/:id', async (req: Request, res: Response) => {
+  try { await removeGeminiAccount(req.params.id); res.json({ success: true }); }
+  catch (err: any) { res.status(400).json({ success: false, error: err.message }); }
+});
+
 // Clear Request Logs
 app.delete('/admin/api/logs', (req: Request, res: Response) => {
   requestLogs.length = 0;
@@ -1006,7 +1030,7 @@ function resolveModelName(model?: string): ResolvedModel {
 }
 
 // Model List endpoint
-app.get('/v1/models', (req: Request, res: Response) => {
+app.get('/v1/models', async (_req: Request, res: Response) => {
   const baseModels = [
     { id: 'qwen3.7-max', description: 'Flagship reasoning and intelligence model' },
     { id: 'qwen3.7-plus', description: 'Next-gen flagship multimodal model' },
@@ -1023,7 +1047,7 @@ app.get('/v1/models', (req: Request, res: Response) => {
     { id: 'qwen-coder', description: 'Alias for qwen3-coder-plus' }
   ];
 
-  const models: any[] = deepSeekModels();
+  const models: any[] = [...deepSeekModels(), ...(await geminiModels())];
   for (const base of baseModels) {
     models.push({ id: base.id, object: 'model', created: 1720000000, owned_by: 'qwen-free-api', description: base.description });
     models.push({ id: `${base.id}-thinking`, object: 'model', created: 1720000000, owned_by: 'qwen-free-api', description: `${base.description} (Force thinking)` });
@@ -1165,9 +1189,9 @@ app.post('/v1/images/generations', async (req: Request, res: Response) => {
   }
 });
 
-// DeepSeek remains an isolated provider service so its specialized TLS,
-// proof-of-work, account, and session engine can evolve independently.
+// Specialized provider services evolve independently behind Conduit's routing contract.
 app.post('/v1/chat/completions', proxyDeepSeekChat);
+app.post('/v1/chat/completions', proxyGeminiChat);
 
 // Qwen Chat Completions provider
 app.post('/v1/chat/completions', async (req: Request, res: Response) => {

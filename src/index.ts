@@ -8,6 +8,7 @@ import { v4 as uuidv4 } from 'uuid';
 import dotenv = require('dotenv');
 import path = require('path');
 import fs = require('fs');
+import zlib = require('zlib');
 
 dotenv.config();
 
@@ -206,6 +207,22 @@ function buildAuthHeaders(ticket: string): Record<string, string> {
     headers['Cookie'] = generateCookie(ticket);
   }
   return headers;
+}
+
+function decompressResponseBody(data: any): string {
+  if (!data) return '';
+  if (Buffer.isBuffer(data)) {
+    try {
+      return zlib.brotliDecompressSync(data).toString('utf-8');
+    } catch {
+      try {
+        return zlib.gunzipSync(data).toString('utf-8');
+      } catch {
+        return data.toString('utf-8');
+      }
+    }
+  }
+  return String(data);
 }
 
 // Ticket selector utilizing the dynamic account pool & Bearer headers
@@ -1428,13 +1445,14 @@ app.post('/v1/chat/completions', async (req: Request, res: Response) => {
         ...buildAuthHeaders(ticket),
         'x-request-id': uuidv4(),
       },
-      responseType: 'text',
+      responseType: 'arraybuffer',
     });
 
     const responseId = `chatcmpl-${uuidv4()}`;
     const createdTime = Math.floor(Date.now() / 1000);
-    console.log(`[Qwen Raw SSE Response]:\n`, qwenResp.data);
-    const sseParsed = parseQwenSsePayload(qwenResp.data);
+    const decompressedBody = decompressResponseBody(qwenResp.data);
+    console.log(`[Qwen Decompressed SSE Response length]: ${decompressedBody.length}`);
+    const sseParsed = parseQwenSsePayload(decompressedBody);
 
     const toolResult = parseToolCalls(sseParsed.content);
     const parsedToolCalls = toolResult?.toolCalls || null;

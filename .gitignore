@@ -1,5 +1,7 @@
 node_modules/
 dist/
 .env
+data/
+config/deepseek.toml.tmp
 .DS_Store
 *.log

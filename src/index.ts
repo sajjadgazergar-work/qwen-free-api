@@ -18,9 +18,13 @@ import {
   validateConversation,
 } from './tool-calling';
 import {
+  addDeepSeekAccount,
+  deepSeekAdminLogin,
   deepSeekModels,
+  getDeepSeekAccounts,
   getDeepSeekStatus,
   proxyDeepSeekChat,
+  removeDeepSeekAccount,
 } from './providers/deepseek';
 
 dotenv.config();
@@ -43,8 +47,12 @@ const WEB_ACCEPT_LANGUAGE = 'zh-CN,zh;q=0.9,en;q=0.8';
 // ============================================
 
 interface Account {
+  id: string;
+  label: string;
   value: string;
   ok: boolean;
+  source: 'environment' | 'dashboard';
+  createdAt: number;
   lastUsed?: number;
   failures: number;
   cooldownUntil?: number;
@@ -68,13 +76,49 @@ let latencyCount = 0;
 const startTime = Date.now();
 const requestLogs: RequestLog[] = [];
 
-// Initialize accounts from environment variables
-const initialTokens = process.env.API_TOKENS || process.env.QWEN_TOKENS || '';
-if (initialTokens) {
-  initialTokens.split(',').map(s => s.trim()).filter(Boolean).forEach(token => {
-    accountPool.push({ value: token, ok: true, failures: 0 });
-  });
+const DATA_DIR = process.env.CONDUIT_DATA_DIR || path.join(process.cwd(), 'data');
+const QWEN_ACCOUNTS_FILE = path.join(DATA_DIR, 'qwen-accounts.json');
+
+function credentialKind(value: string): 'cookie' | 'bearer' | 'ticket' {
+  if (value.includes('=') || value.includes(';')) return 'cookie';
+  if (value.startsWith('ey') || value.length > 100) return 'bearer';
+  return 'ticket';
 }
+
+function maskIdentity(value: string): string {
+  if (value.length <= 8) return '***';
+  return `${value.slice(0, 4)}…${value.slice(-4)}`;
+}
+
+function persistQwenAccounts() {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  const dashboardAccounts = accountPool.filter(account => account.source === 'dashboard');
+  const temporary = `${QWEN_ACCOUNTS_FILE}.tmp`;
+  fs.writeFileSync(temporary, JSON.stringify(dashboardAccounts, null, 2), { mode: 0o600 });
+  fs.renameSync(temporary, QWEN_ACCOUNTS_FILE);
+}
+
+function loadQwenAccounts() {
+  const initialTokens = process.env.API_TOKENS || process.env.QWEN_TOKENS || '';
+  initialTokens.split(',').map(s => s.trim()).filter(Boolean).forEach((value, index) => {
+    accountPool.push({ id: `env-${index + 1}`, label: `Environment account ${index + 1}`, value, ok: true, failures: 0, source: 'environment', createdAt: Date.now() });
+  });
+  try {
+    const saved = JSON.parse(fs.readFileSync(QWEN_ACCOUNTS_FILE, 'utf8')) as Partial<Account>[];
+    for (const account of saved) {
+      if (!account.value || accountPool.some(existing => existing.value === account.value)) continue;
+      accountPool.push({
+        id: account.id || crypto.randomUUID(), label: account.label || 'Qwen account', value: account.value,
+        ok: account.ok !== false, failures: account.failures || 0, source: 'dashboard', createdAt: account.createdAt || Date.now(),
+        lastUsed: account.lastUsed, cooldownUntil: account.cooldownUntil,
+      });
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') console.warn('[Conduit] Failed to load Qwen accounts:', (error as Error).message);
+  }
+}
+
+loadQwenAccounts();
 
 // Request logging & metrics middleware
 app.use((req, res, next) => {
@@ -214,12 +258,13 @@ function generateCookie(ticket: string): string {
 // Upstream Authentication Headers Generator (supporting legacy cookies & newer JWT tokens)
 function buildAuthHeaders(ticket: string): Record<string, string> {
   const headers: Record<string, string> = {};
-  if (ticket.startsWith('ey') || ticket.length > 100) {
-    // Newer Qwen Web API v2 token (JWT format)
-    headers['Authorization'] = `Bearer ${ticket}`;
+  const looksLikeCookie = ticket.includes(';') || ticket.startsWith('login_aliyunid_ticket=') || ticket.startsWith('tongyi_sso_ticket=');
+  if (!looksLikeCookie && (ticket.startsWith('ey') || ticket.length > 100)) {
+    // Newer Qwen Web API v2 bearer session.
+    headers.Authorization = `Bearer ${ticket}`;
   } else {
-    // Legacy Qwen Tongyi SSO ticket cookies
-    headers['Cookie'] = generateCookie(ticket);
+    // Complete Cookie headers and legacy Qwen SSO tickets.
+    headers.Cookie = generateCookie(ticket);
   }
   return headers;
 }
@@ -784,16 +829,17 @@ app.get('/', (req: Request, res: Response) => {
   if (acceptHeader.includes('text/html')) {
     return res.redirect('/admin');
   }
-  res.send('Qwen-Free-API is up and running. Use POST /v1/chat/completions to call Qwen models, or visit /admin in browser.');
+  res.send('Conduit is running with Qwen and DeepSeek providers. Use POST /v1/chat/completions or visit /admin.');
 });
 
 // Fetch metrics & stats
 app.get('/admin/api/providers', async (_req: Request, res: Response) => {
+  const deepseek = await getDeepSeekStatus();
   res.json({
     object: 'list',
     data: [
-      { id: 'qwen', enabled: accountPool.length > 0, healthy: accountPool.some(a => a.ok), accounts: accountPool.length },
-      await getDeepSeekStatus(),
+      { id: 'qwen', name: 'Qwen', mode: 'native', enabled: accountPool.length > 0, healthy: accountPool.some(a => a.ok), accounts: accountPool.length },
+      { ...deepseek, name: 'DeepSeek', mode: 'managed-service' },
     ],
   });
 });
@@ -809,7 +855,7 @@ app.get('/admin/api/stats', (req: Request, res: Response) => {
     },
     accounts: accountPool.map(({ value, ...account }) => ({
       ...account,
-      credential: value.length <= 8 ? '***' : `${value.slice(0, 4)}…${value.slice(-4)}`,
+      provider: 'qwen', credential: maskIdentity(value), credentialKind: credentialKind(value),
     })),
     sys: {
       node: process.version,
@@ -825,37 +871,76 @@ app.get('/admin/api/stats', (req: Request, res: Response) => {
   });
 });
 
-// Dynamic Account Insertion
-app.post('/admin/api/accounts', (req: Request, res: Response) => {
+// Qwen account-session management. Alibaba/Qwen login is browser-based and may
+// require CAPTCHA, OTP, SSO, or federated approval, so Conduit imports the
+// resulting browser session instead of storing an Alibaba password.
+app.post('/admin/api/providers/qwen/accounts', (req: Request, res: Response) => {
   try {
-    const { tokens } = req.body;
-    if (!tokens) {
-      return res.status(400).json({ success: false, error: 'tokens are required' });
-    }
-    const list = String(tokens).split(',').map(s => s.trim()).filter(Boolean);
-    list.forEach(t => {
-      if (!accountPool.some(account => account.value === t)) {
-        accountPool.push({ value: t, ok: true, failures: 0 });
-      }
-    });
+    const label = String(req.body?.label || '').trim() || `Qwen account ${accountPool.length + 1}`;
+    const session = String(req.body?.session || req.body?.tokens || '').trim();
+    if (!session) return res.status(400).json({ success: false, error: 'A Qwen browser session is required.' });
+    if (accountPool.some(account => account.value === session)) return res.status(409).json({ success: false, error: 'This Qwen session is already configured.' });
+    accountPool.push({ id: crypto.randomUUID(), label, value: session, ok: true, failures: 0, source: 'dashboard', createdAt: Date.now() });
+    persistQwenAccounts();
     res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
-// Remove Account
-app.delete('/admin/api/accounts', (req: Request, res: Response) => {
+app.delete('/admin/api/providers/qwen/accounts/:id', (req: Request, res: Response) => {
   try {
-    const index = Number(req.query.index);
-    if (Number.isNaN(index) || index < 0 || index >= accountPool.length) {
-      return res.status(400).json({ success: false, error: 'Invalid account index' });
-    }
+    const index = accountPool.findIndex(account => account.id === req.params.id);
+    if (index < 0) return res.status(404).json({ success: false, error: 'Qwen account not found.' });
+    if (accountPool[index].source === 'environment') return res.status(409).json({ success: false, error: 'Environment accounts must be removed from QWEN_TOKENS.' });
     accountPool.splice(index, 1);
+    persistQwenAccounts();
     res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }
+});
+
+// Legacy aliases retained for existing dashboard/API clients.
+app.post('/admin/api/accounts', (req: Request, res: Response) => {
+  req.body = { label: req.body?.label, session: req.body?.tokens || req.body?.session };
+  const session = String(req.body.session || '').trim();
+  if (!session) return res.status(400).json({ success: false, error: 'A Qwen browser session is required.' });
+  if (accountPool.some(account => account.value === session)) return res.status(409).json({ success: false, error: 'This Qwen session is already configured.' });
+  accountPool.push({ id: crypto.randomUUID(), label: String(req.body.label || `Qwen account ${accountPool.length + 1}`), value: session, ok: true, failures: 0, source: 'dashboard', createdAt: Date.now() });
+  persistQwenAccounts();
+  res.json({ success: true });
+});
+
+app.post('/admin/api/providers/deepseek/session', async (req: Request, res: Response) => {
+  try { res.json({ success: true, ...(await deepSeekAdminLogin(String(req.body?.password || ''))) }); }
+  catch (err: any) { res.status(400).json({ success: false, error: err.message }); }
+});
+
+app.get('/admin/api/providers/deepseek/accounts', async (req: Request, res: Response) => {
+  try {
+    const token = String(req.headers['x-deepseek-admin-token'] || '');
+    if (!token) return res.status(401).json({ success: false, error: 'Connect the DeepSeek service first.' });
+    res.json({ success: true, accounts: await getDeepSeekAccounts(token) });
+  } catch (err: any) { res.status(502).json({ success: false, error: err.message }); }
+});
+
+app.post('/admin/api/providers/deepseek/accounts', async (req: Request, res: Response) => {
+  try {
+    const token = String(req.headers['x-deepseek-admin-token'] || '');
+    if (!token) return res.status(401).json({ success: false, error: 'Connect the DeepSeek service first.' });
+    await addDeepSeekAccount(token, req.body || {});
+    res.json({ success: true });
+  } catch (err: any) { res.status(400).json({ success: false, error: err.message }); }
+});
+
+app.delete('/admin/api/providers/deepseek/accounts/:index', async (req: Request, res: Response) => {
+  try {
+    const token = String(req.headers['x-deepseek-admin-token'] || '');
+    if (!token) return res.status(401).json({ success: false, error: 'Connect the DeepSeek service first.' });
+    await removeDeepSeekAccount(token, Number(req.params.index));
+    res.json({ success: true });
+  } catch (err: any) { res.status(400).json({ success: false, error: err.message }); }
 });
 
 // Clear Request Logs

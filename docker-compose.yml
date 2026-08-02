@@ -7,6 +7,9 @@ services:
       - .env
     environment:
       DEEPSEEK_BASE_URL: http://deepseek:22217
+      CONDUIT_DATA_DIR: /app/data
+    volumes:
+      - ./data/qwen:/app/data
     depends_on:
       - deepseek
     restart: unless-stopped
@@ -18,6 +21,7 @@ services:
       - ./config/deepseek.toml:/app/config/config.toml
     environment:
       DS_DATA_DIR: /app/data
+      DS_CONFIG_PATH: /app/config/config.toml
       RUST_LOG: info
     expose:
       - "22217"

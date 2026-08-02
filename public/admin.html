@@ -1,490 +1,73 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en" class="dark">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Qwen Free API - Admin Dashboard</title>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Conduit — Provider Control Plane</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      darkMode: 'class',
-      theme: {
-        extend: {
-          colors: {
-            brand: {
-              50: '#f0f7ff',
-              100: '#e0effe',
-              500: '#0284c7',
-              600: '#0369a1',
-              900: '#0c4a6e',
-            }
-          }
-        }
-      }
-    }
-  </script>
-  <script src="https://unpkg.com/lucide@latest"></script>
-  <style>
-    /* Custom scrollbar */
-    ::-webkit-scrollbar {
-      width: 6px;
-      height: 6px;
-    }
-    ::-webkit-scrollbar-track {
-      background: #0f172a;
-    }
-    ::-webkit-scrollbar-thumb {
-      background: #334155;
-      border-radius: 3px;
-    }
-    ::-webkit-scrollbar-thumb:hover {
-      background: #475569;
-    }
-  </style>
+  <script>tailwind.config={darkMode:'class',theme:{extend:{colors:{brand:{400:'#38bdf8',500:'#0ea5e9',600:'#0284c7'}}}}}</script>
+  <style>body{background:radial-gradient(circle at 20% -10%,#0c4a6e55,transparent 32%),#020617}::-webkit-scrollbar{width:6px}::-webkit-scrollbar-thumb{background:#334155;border-radius:9px}</style>
 </head>
-<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans selection:bg-brand-500 selection:text-white">
+<body class="min-h-screen text-slate-100 antialiased">
+<header class="sticky top-0 z-20 border-b border-slate-800/80 bg-slate-950/80 backdrop-blur-xl">
+  <div class="mx-auto flex h-16 max-w-7xl items-center justify-between px-5">
+    <div class="flex items-center gap-3"><div class="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-sky-400 to-indigo-600 font-black">C</div><div><h1 class="font-semibold tracking-tight">Conduit</h1><p class="text-xs text-slate-400">Multi-provider AI control plane</p></div></div>
+    <div id="global-status" class="rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-400">Checking providers…</div>
+  </div>
+</header>
+<main class="mx-auto max-w-7xl space-y-8 px-5 py-8">
+  <section>
+    <div class="mb-4 flex items-end justify-between"><div><p class="text-xs font-semibold uppercase tracking-[.2em] text-sky-400">Overview</p><h2 class="mt-1 text-2xl font-semibold">Provider mesh</h2></div><button onclick="refreshAll()" class="rounded-lg border border-slate-700 px-3 py-2 text-xs hover:bg-slate-800">Refresh</button></div>
+    <div id="provider-cards" class="grid gap-4 md:grid-cols-2"></div>
+  </section>
 
-  <!-- Header -->
-  <header class="border-b border-slate-800 bg-slate-900/50 backdrop-blur-md sticky top-0 z-50">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-      <div class="flex items-center gap-3">
-        <div class="h-9 w-9 rounded-lg bg-gradient-to-tr from-sky-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-sky-500/20">
-          <i data-lucide="cpu" class="h-5 w-5 text-white"></i>
-        </div>
-        <div>
-          <h1 class="text-lg font-bold tracking-tight">Qwen Free API</h1>
-          <p class="text-xs text-slate-400">Web Protocol Reverse Proxy</p>
+  <section class="grid gap-6 xl:grid-cols-2">
+    <article class="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/70 shadow-2xl shadow-black/20">
+      <div class="border-b border-slate-800 p-5"><div class="flex items-center justify-between"><div><p class="text-xs font-semibold uppercase tracking-wider text-violet-400">Provider 01</p><h3 class="mt-1 text-lg font-semibold">Qwen accounts</h3></div><span class="rounded-md bg-violet-500/10 px-2 py-1 text-xs text-violet-300">Browser session</span></div><p class="mt-3 text-sm leading-6 text-slate-400">Qwen uses Alibaba browser SSO. Sign in to Qwen in your browser, then import the resulting session here. Conduit stores the session—not your Alibaba password.</p></div>
+      <div class="space-y-4 p-5">
+        <label class="block"><span class="mb-1.5 block text-xs font-medium text-slate-300">Account label</span><input id="qwen-label" class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm outline-none focus:border-violet-500" placeholder="Personal Qwen"></label>
+        <label class="block"><span class="mb-1.5 block text-xs font-medium text-slate-300">Qwen browser session</span><textarea id="qwen-session" rows="3" class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 font-mono text-xs outline-none focus:border-violet-500" placeholder="Paste the complete Cookie header, tongyi_sso_ticket, login_aliyunid_ticket, or supported web bearer session"></textarea></label>
+        <div class="flex items-center justify-between gap-4"><a href="https://chat.qwen.ai" target="_blank" rel="noopener" class="text-xs text-sky-400 hover:text-sky-300">Open Qwen login ↗</a><button onclick="addQwen()" class="rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-semibold hover:bg-violet-500">Add Qwen account</button></div>
+      </div>
+      <div class="border-t border-slate-800"><div id="qwen-accounts" class="divide-y divide-slate-800"></div></div>
+    </article>
+
+    <article class="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/70 shadow-2xl shadow-black/20">
+      <div class="border-b border-slate-800 p-5"><div class="flex items-center justify-between"><div><p class="text-xs font-semibold uppercase tracking-wider text-cyan-400">Provider 02</p><h3 class="mt-1 text-lg font-semibold">DeepSeek accounts</h3></div><span class="rounded-md bg-cyan-500/10 px-2 py-1 text-xs text-cyan-300">Email / mobile login</span></div><p class="mt-3 text-sm leading-6 text-slate-400">Connect Conduit to the managed DeepSeek provider, then add account credentials. DeepSeek logs in and refreshes its web session internally.</p></div>
+      <div class="space-y-4 p-5">
+        <div id="ds-connect-panel"><label class="block"><span class="mb-1.5 block text-xs font-medium text-slate-300">DeepSeek service admin password</span><input id="ds-admin-password" type="password" class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm outline-none focus:border-cyan-500" placeholder="Set on first connection or enter existing password"></label><button onclick="connectDeepSeek()" class="mt-3 w-full rounded-lg bg-cyan-600 px-4 py-2.5 text-sm font-semibold hover:bg-cyan-500">Connect DeepSeek service</button></div>
+        <div id="ds-account-form" class="hidden space-y-3">
+          <div class="grid grid-cols-2 gap-3"><label><span class="mb-1.5 block text-xs text-slate-300">Login type</span><select id="ds-login-type" onchange="toggleDsLogin()" class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm"><option value="email">Email</option><option value="mobile">Mobile</option></select></label><label><span class="mb-1.5 block text-xs text-slate-300">Password</span><input id="ds-password" type="password" class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm" placeholder="Account password"></label></div>
+          <div id="ds-email-wrap"><label><span class="mb-1.5 block text-xs text-slate-300">Email address</span><input id="ds-email" type="email" class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm" placeholder="you@example.com"></label></div>
+          <div id="ds-mobile-wrap" class="hidden grid grid-cols-[110px_1fr] gap-3"><label><span class="mb-1.5 block text-xs text-slate-300">Area code</span><input id="ds-area" class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm" placeholder="+86"></label><label><span class="mb-1.5 block text-xs text-slate-300">Mobile</span><input id="ds-mobile" class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm"></label></div>
+          <div class="flex justify-between"><button onclick="disconnectDeepSeek()" class="text-xs text-slate-400 hover:text-white">Disconnect admin session</button><button onclick="addDeepSeek()" class="rounded-lg bg-cyan-600 px-4 py-2.5 text-sm font-semibold hover:bg-cyan-500">Add DeepSeek account</button></div>
         </div>
       </div>
-      <div class="flex items-center gap-4">
-        <a href="https://github.com/sajjadgazergar-work/qwen-free-api" target="_blank" class="text-slate-400 hover:text-slate-200 transition-colors">
-          <i data-lucide="github" class="h-5 w-5"></i>
-        </a>
-        <div class="flex items-center gap-2 bg-slate-800 px-3 py-1 rounded-full text-xs font-medium text-emerald-400">
-          <span class="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
-          Running
-        </div>
-      </div>
-    </div>
-  </header>
+      <div class="border-t border-slate-800"><div id="ds-accounts" class="divide-y divide-slate-800"></div></div>
+    </article>
+  </section>
 
-  <main class="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-    <!-- Navigation Tabs -->
-    <div class="border-b border-slate-800">
-      <nav class="-mb-px flex gap-6" aria-label="Tabs">
-        <button onclick="switchTab('tab-dashboard')" id="btn-tab-dashboard" class="tab-btn border-brand-500 text-brand-500 border-b-2 py-4 px-1 text-sm font-semibold flex items-center gap-2 transition-all">
-          <i data-lucide="layout-dashboard" class="h-4 w-4"></i>
-          Dashboard
-        </button>
-        <button onclick="switchTab('tab-accounts')" id="btn-tab-accounts" class="tab-btn border-transparent text-slate-400 hover:text-slate-200 hover:border-slate-700 border-b-2 py-4 px-1 text-sm font-medium flex items-center gap-2 transition-all">
-          <i data-lucide="users" class="h-4 w-4"></i>
-          Account Pool
-        </button>
-        <button onclick="switchTab('tab-config')" id="btn-tab-config" class="tab-btn border-transparent text-slate-400 hover:text-slate-200 hover:border-slate-700 border-b-2 py-4 px-1 text-sm font-medium flex items-center gap-2 transition-all">
-          <i data-lucide="settings" class="h-4 w-4"></i>
-          Configuration
-        </button>
-        <button onclick="switchTab('tab-logs')" id="btn-tab-logs" class="tab-btn border-transparent text-slate-400 hover:text-slate-200 hover:border-slate-700 border-b-2 py-4 px-1 text-sm font-medium flex items-center gap-2 transition-all">
-          <i data-lucide="terminal" class="h-4 w-4"></i>
-          Request Logs
-        </button>
-      </nav>
-    </div>
-
-    <!-- TAB: Dashboard -->
-    <div id="tab-dashboard" class="tab-content space-y-6">
-      <!-- Stats Summary -->
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <!-- Card 1 -->
-        <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 flex items-center justify-between">
-          <div class="space-y-1">
-            <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total Requests</p>
-            <p id="stat-total-requests" class="text-3xl font-bold">-</p>
-          </div>
-          <div class="p-3 bg-slate-800 rounded-lg text-brand-500">
-            <i data-lucide="activity" class="h-6 w-6"></i>
-          </div>
-        </div>
-        <!-- Card 2 -->
-        <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 flex items-center justify-between">
-          <div class="space-y-1">
-            <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Success Rate</p>
-            <p id="stat-success-rate" class="text-3xl font-bold">-</p>
-          </div>
-          <div class="p-3 bg-slate-800 rounded-lg text-emerald-500">
-            <i data-lucide="trending-up" class="h-6 w-6"></i>
-          </div>
-        </div>
-        <!-- Card 3 -->
-        <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 flex items-center justify-between">
-          <div class="space-y-1">
-            <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Active Tickets</p>
-            <p id="stat-active-accounts" class="text-3xl font-bold">-</p>
-          </div>
-          <div class="p-3 bg-slate-800 rounded-lg text-indigo-500">
-            <i data-lucide="users" class="h-6 w-6"></i>
-          </div>
-        </div>
-        <!-- Card 4 -->
-        <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 flex items-center justify-between">
-          <div class="space-y-1">
-            <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Average Latency</p>
-            <p id="stat-avg-latency" class="text-3xl font-bold">-</p>
-          </div>
-          <div class="p-3 bg-slate-800 rounded-lg text-amber-500">
-            <i data-lucide="clock" class="h-6 w-6"></i>
-          </div>
-        </div>
-      </div>
-
-      <!-- Main Panel Grid -->
-      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <!-- Account Status Table -->
-        <div class="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-xl overflow-hidden flex flex-col">
-          <div class="p-5 border-b border-slate-800 flex justify-between items-center bg-slate-900/50">
-            <div class="flex items-center gap-2">
-              <i data-lucide="shield-check" class="h-5 w-5 text-brand-500"></i>
-              <h2 class="font-bold text-base">Account Pool Status</h2>
-            </div>
-            <button onclick="switchTab('tab-accounts')" class="text-xs font-medium text-brand-500 hover:text-brand-600 transition-colors flex items-center gap-1">
-              Manage accounts <i data-lucide="arrow-right" class="h-3 w-3"></i>
-            </button>
-          </div>
-          <div class="overflow-x-auto flex-grow">
-            <table class="min-w-full divide-y divide-slate-800">
-              <thead class="bg-slate-950/40">
-                <tr>
-                  <th scope="col" class="px-6 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Account ID / Ticket Index</th>
-                  <th scope="col" class="px-6 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Type</th>
-                  <th scope="col" class="px-6 py-3 class=text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Status</th>
-                  <th scope="col" class="px-6 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Last Activity</th>
-                </tr>
-              </thead>
-              <tbody id="table-dashboard-accounts" class="divide-y divide-slate-800 text-sm">
-                <!-- Loaded dynamically -->
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <!-- Uptime & System info -->
-        <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-6">
-          <div>
-            <h3 class="font-bold text-base mb-4 flex items-center gap-2">
-              <i data-lucide="server" class="h-5 w-5 text-brand-500"></i>
-              System Metadata
-            </h3>
-            <div class="space-y-4">
-              <div class="flex justify-between items-center text-sm py-1 border-b border-slate-800/40">
-                <span class="text-slate-400">Node Runtime</span>
-                <span id="sys-node-version" class="font-mono text-xs">v20.x</span>
-              </div>
-              <div class="flex justify-between items-center text-sm py-1 border-b border-slate-800/40">
-                <span class="text-slate-400">Uptime</span>
-                <span id="sys-uptime" class="font-medium">-</span>
-              </div>
-              <div class="flex justify-between items-center text-sm py-1 border-b border-slate-800/40">
-                <span class="text-slate-400">Memory Usage</span>
-                <span id="sys-memory" class="font-mono text-xs">-</span>
-              </div>
-              <div class="flex justify-between items-center text-sm py-1 border-b border-slate-800/40">
-                <span class="text-slate-400">Baxia Version</span>
-                <span class="font-mono text-xs bg-slate-800 px-2 py-0.5 rounded text-slate-300">2.5.36</span>
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <h3 class="font-bold text-base mb-3 flex items-center gap-2">
-              <i data-lucide="link" class="h-5 w-5 text-brand-500"></i>
-              OpenAI Base URL
-            </h3>
-            <div class="bg-slate-950 p-3 rounded-lg border border-slate-800 font-mono text-xs select-all text-sky-400 break-all">
-              https://qwen-free-api-production.up.railway.app/v1
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- TAB: Accounts Manager -->
-    <div id="tab-accounts" class="tab-content hidden space-y-6">
-      <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
-        <h2 class="text-lg font-bold mb-2 flex items-center gap-2">
-          <i data-lucide="plus-circle" class="h-5 w-5 text-brand-500"></i>
-          Add New Ticket / SSO Cookie
-        </h2>
-        <p class="text-xs text-slate-400 mb-4">
-          Provide your <code class="bg-slate-950 text-slate-300 px-1 py-0.5 rounded">tongyi_sso_ticket</code> or <code class="bg-slate-950 text-slate-300 px-1 py-0.5 rounded">login_aliyunid_ticket</code> cookie. To add multiple accounts at once, write them comma-separated.
-        </p>
-        <div class="space-y-4">
-          <textarea id="input-account-tokens" rows="3" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-sm font-mono text-slate-100 focus:outline-none focus:border-brand-500 transition-colors placeholder:text-slate-600" placeholder="e.g. login_aliyunid_ticket=Mzg0NTk3M...; or raw ticket hash"></textarea>
-          <div class="flex justify-end">
-            <button onclick="addAccounts()" class="bg-brand-500 hover:bg-brand-600 text-white font-bold text-sm px-5 py-2.5 rounded-lg flex items-center gap-2 shadow-lg shadow-brand-500/20 transition-all">
-              <i data-lucide="plus" class="h-4 w-4"></i>
-              Add to Pool
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Account List -->
-      <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-        <div class="p-5 border-b border-slate-800 bg-slate-900/50">
-          <h2 class="font-bold text-base flex items-center gap-2">
-            <i data-lucide="database" class="h-5 w-5 text-brand-500"></i>
-            Active Account Pool
-          </h2>
-        </div>
-        <div class="overflow-x-auto">
-          <table class="min-w-full divide-y divide-slate-800">
-            <thead class="bg-slate-950/40">
-              <tr>
-                <th scope="col" class="px-6 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider"># Index</th>
-                <th scope="col" class="px-6 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Ticket / Cookie Value</th>
-                <th scope="col" class="px-6 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Status</th>
-                <th scope="col" class="px-6 py-3 text-right text-xs font-semibold text-slate-400 uppercase tracking-wider">Actions</th>
-              </tr>
-            </thead>
-            <tbody id="table-accounts-list" class="divide-y divide-slate-800 text-sm">
-              <!-- Loaded dynamically -->
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-
-    <!-- TAB: Config -->
-    <div id="tab-config" class="tab-content hidden space-y-6">
-      <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
-        <h2 class="text-lg font-bold mb-4 flex items-center gap-2">
-          <i data-lucide="sliders" class="h-5 w-5 text-brand-500"></i>
-          Environment Configuration
-        </h2>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6" id="config-grid">
-          <!-- Loaded dynamically -->
-        </div>
-      </div>
-    </div>
-
-    <!-- TAB: Request Logs -->
-    <div id="tab-logs" class="tab-content hidden space-y-6">
-      <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden flex flex-col max-h-[600px]">
-        <div class="p-5 border-b border-slate-800 flex justify-between items-center bg-slate-900/50">
-          <div class="flex items-center gap-2">
-            <i data-lucide="terminal" class="h-5 w-5 text-brand-500"></i>
-            <h2 class="font-bold text-base">Request History Logs</h2>
-          </div>
-          <button onclick="clearLogs()" class="text-xs font-medium text-red-400 hover:text-red-300 transition-colors flex items-center gap-1">
-            <i data-lucide="trash-2" class="h-3 w-3"></i> Clear logs
-          </button>
-        </div>
-        <div id="logs-container" class="p-4 bg-slate-950 font-mono text-xs text-slate-300 overflow-y-auto space-y-1 h-[450px] leading-relaxed select-text">
-          <!-- Loaded dynamically -->
-        </div>
-      </div>
-    </div>
-  </main>
-
-  <!-- Footer -->
-  <footer class="border-t border-slate-900 bg-slate-950 text-slate-500 text-xs py-6 mt-12">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex justify-between items-center">
-      <p>&copy; 2026 Qwen-Free-API. Mirroring ds-free-api architecture.</p>
-      <p class="flex items-center gap-1"><i data-lucide="heart" class="h-3.5 w-3.5 text-red-500 fill-red-500"></i> Tehran, Iran</p>
-    </div>
-  </footer>
-
-  <script>
-    let activeTab = 'tab-dashboard';
-    
-    function switchTab(tabId) {
-      document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
-      document.getElementById(tabId).classList.remove('hidden');
-
-      document.querySelectorAll('.tab-btn').forEach(btn => {
-        btn.classList.remove('border-brand-500', 'text-brand-500');
-        btn.classList.add('border-transparent', 'text-slate-400');
-      });
-
-      const activeBtn = document.getElementById(`btn-${tabId}`);
-      activeBtn.classList.remove('border-transparent', 'text-slate-400');
-      activeBtn.classList.add('border-brand-500', 'text-brand-500');
-
-      activeTab = tabId;
-      fetchData();
-    }
-
-    async function fetchData() {
-      try {
-        const res = await fetch('/admin/api/stats');
-        const data = await res.json();
-        
-        // Update stats
-        document.getElementById('stat-total-requests').innerText = data.stats.totalRequests;
-        document.getElementById('stat-success-rate').innerText = data.stats.totalRequests > 0 
-          ? ((data.stats.successRequests / data.stats.totalRequests) * 100).toFixed(1) + '%'
-          : '100%';
-        document.getElementById('stat-active-accounts').innerText = data.accounts.length;
-        document.getElementById('stat-avg-latency').innerText = data.stats.avgLatency + 'ms';
-        
-        // System metadata
-        document.getElementById('sys-node-version').innerText = data.sys.node;
-        document.getElementById('sys-uptime').innerText = formatUptime(data.sys.uptime);
-        document.getElementById('sys-memory').innerText = data.sys.memory;
-
-        // Render dashboard accounts table
-        const tbodyDash = document.getElementById('table-dashboard-accounts');
-        tbodyDash.innerHTML = '';
-        if (data.accounts.length === 0) {
-          tbodyDash.innerHTML = `<tr><td colspan="4" class="px-6 py-8 text-center text-slate-500">No active accounts. Go to "Account Pool" to add some!</td></tr>`;
-        } else {
-          data.accounts.forEach((acc, i) => {
-            tbodyDash.innerHTML += `
-              <tr class="hover:bg-slate-900/40 transition-colors">
-                <td class="px-6 py-4 font-mono font-medium text-slate-300">Ticket #${i + 1}</td>
-                <td class="px-6 py-4 text-xs font-mono text-slate-400">${acc.credential}</td>
-                <td class="px-6 py-4">
-                  <span class="inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-semibold ${acc.ok ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}">
-                    <span class="h-1.5 w-1.5 rounded-full ${acc.ok ? 'bg-emerald-400' : 'bg-red-400'}"></span>
-                    ${acc.ok ? 'Healthy' : 'Expired/Error'}
-                  </span>
-                </td>
-                <td class="px-6 py-4 text-slate-500 text-xs">${new Date(acc.lastUsed || Date.now()).toLocaleTimeString()}</td>
-              </tr>
-            `;
-          });
-        }
-
-        // Render Accounts Manager Table
-        const tbodyAccs = document.getElementById('table-accounts-list');
-        tbodyAccs.innerHTML = '';
-        if (data.accounts.length === 0) {
-          tbodyAccs.innerHTML = `<tr><td colspan="4" class="px-6 py-8 text-center text-slate-500">No tickets configured. Add one below to activate!</td></tr>`;
-        } else {
-          data.accounts.forEach((acc, i) => {
-            tbodyAccs.innerHTML += `
-              <tr class="hover:bg-slate-900/40 transition-colors">
-                <td class="px-6 py-4 font-bold text-slate-400">#${i + 1}</td>
-                <td class="px-6 py-4 font-mono text-xs select-all break-all pr-12 text-slate-300">${acc.credential}</td>
-                <td class="px-6 py-4">
-                  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${acc.ok ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' : 'bg-red-950 text-red-400 border border-red-800'}">
-                    ${acc.ok ? 'Active' : 'Unhealthy'}
-                  </span>
-                </td>
-                <td class="px-6 py-4 text-right">
-                  <button onclick="removeAccount(${i})" class="text-red-400 hover:text-red-300 text-xs font-semibold flex items-center gap-1 justify-end ml-auto transition-colors">
-                    <i data-lucide="trash-2" class="h-3.5 w-3.5"></i> Delete
-                  </button>
-                </td>
-              </tr>
-            `;
-          });
-        }
-
-        // Render Config view
-        const configGrid = document.getElementById('config-grid');
-        configGrid.innerHTML = `
-          <div class="space-y-1">
-            <span class="text-xs text-slate-400 font-semibold uppercase">Search Mode</span>
-            <div class="bg-slate-950 border border-slate-800 rounded-lg p-3 text-sm">${data.config.enableSearch ? 'Enabled (ENABLE_SEARCH=true)' : 'Disabled (ENABLE_SEARCH=false)'}</div>
-          </div>
-          <div class="space-y-1">
-            <span class="text-xs text-slate-400 font-semibold uppercase">Port Binding</span>
-            <div class="bg-slate-950 border border-slate-800 rounded-lg p-3 text-sm font-mono">${data.config.port}</div>
-          </div>
-          <div class="space-y-1">
-            <span class="text-xs text-slate-400 font-semibold uppercase">Environment</span>
-            <div class="bg-slate-950 border border-slate-800 rounded-lg p-3 text-sm capitalize">${data.config.nodeEnv}</div>
-          </div>
-          <div class="space-y-1">
-            <span class="text-xs text-slate-400 font-semibold uppercase">Uptime Counter</span>
-            <div class="bg-slate-950 border border-slate-800 rounded-lg p-3 text-sm">${formatUptime(data.sys.uptime)}</div>
-          </div>
-        `;
-
-        // Render logs
-        const logsContainer = document.getElementById('logs-container');
-        logsContainer.innerHTML = '';
-        if (data.logs.length === 0) {
-          logsContainer.innerHTML = `<div class="text-slate-600 italic">No request logs received yet. Test the completion endpoint to populate logs.</div>`;
-        } else {
-          data.logs.forEach(log => {
-            const dateStr = new Date(log.timestamp).toLocaleTimeString();
-            const statusColor = log.status >= 500 ? 'text-red-500' : (log.status >= 400 ? 'text-amber-500' : 'text-emerald-500');
-            logsContainer.innerHTML += `
-              <div class="flex gap-2">
-                <span class="text-slate-600">[${dateStr}]</span>
-                <span class="text-sky-500 font-bold">${log.method}</span>
-                <span class="text-slate-400">${log.url}</span>
-                <span class="${statusColor} font-mono">[${log.status}]</span>
-                <span class="text-slate-500">${log.latency}ms</span>
-              </div>
-            `;
-          });
-        }
-
-        lucide.createIcons();
-
-      } catch (err) {
-        console.error('Failed to pull dashboard stats', err);
-      }
-    }
-
-    async function addAccounts() {
-      const input = document.getElementById('input-account-tokens').value.trim();
-      if (!input) return alert('Token/Ticket input is empty!');
-      
-      const res = await fetch('/admin/api/accounts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tokens: input })
-      });
-      const data = await res.json();
-      if (data.success) {
-        document.getElementById('input-account-tokens').value = '';
-        fetchData();
-        alert('Tokens successfully added to the account pool!');
-      } else {
-        alert('Error adding accounts: ' + data.error);
-      }
-    }
-
-    async function removeAccount(index) {
-      if (!confirm('Are you sure you want to remove this account ticket from the pool?')) return;
-      const res = await fetch(`/admin/api/accounts?index=${index}`, {
-        method: 'DELETE'
-      });
-      const data = await res.json();
-      if (data.success) {
-        fetchData();
-      } else {
-        alert('Error: ' + data.error);
-      }
-    }
-
-    async function clearLogs() {
-      await fetch('/admin/api/logs', { method: 'DELETE' });
-      fetchData();
-    }
-
-    function formatUptime(secs) {
-      const d = Math.floor(secs / 86400);
-      const h = Math.floor((secs % 86400) / 3600);
-      const m = Math.floor((secs % 3600) / 60);
-      const s = Math.floor(secs % 60);
-      if (d > 0) return `${d}d ${h}h ${m}m ${s}s`;
-      if (h > 0) return `${h}h ${m}m ${s}s`;
-      return `${m}m ${s}s`;
-    }
-
-    // Initial load
-    fetchData();
-    // Auto-refresh every 5 seconds
-    setInterval(() => {
-      if (activeTab === 'tab-dashboard' || activeTab === 'tab-logs') {
-        fetchData();
-      }
-    }, 5000);
-  </script>
-</body>
-</html>
+  <section class="rounded-2xl border border-slate-800 bg-slate-900/60 p-5"><div class="grid gap-5 md:grid-cols-4"><div><p class="text-xs uppercase tracking-wider text-slate-500">Requests</p><p id="stat-requests" class="mt-1 text-2xl font-semibold">—</p></div><div><p class="text-xs uppercase tracking-wider text-slate-500">Success rate</p><p id="stat-success" class="mt-1 text-2xl font-semibold">—</p></div><div><p class="text-xs uppercase tracking-wider text-slate-500">Average latency</p><p id="stat-latency" class="mt-1 text-2xl font-semibold">—</p></div><div><p class="text-xs uppercase tracking-wider text-slate-500">OpenAI base URL</p><p class="mt-2 select-all font-mono text-sm text-sky-400"><span id="base-url"></span>/v1</p></div></div></section>
+  <div id="notice" class="fixed bottom-5 right-5 hidden max-w-sm rounded-xl border px-4 py-3 text-sm shadow-2xl"></div>
+</main>
+<script>
+const $=id=>document.getElementById(id); const esc=value=>String(value??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+const dsToken=()=>sessionStorage.getItem('conduit-ds-admin-token')||'';
+function notify(message,error=false){const n=$('notice');n.textContent=message;n.className=`fixed bottom-5 right-5 max-w-sm rounded-xl border px-4 py-3 text-sm shadow-2xl ${error?'border-red-500/40 bg-red-950 text-red-200':'border-emerald-500/40 bg-emerald-950 text-emerald-200'}`;setTimeout(()=>n.classList.add('hidden'),4500)}
+async function jsonFetch(url,options={}){const res=await fetch(url,options);const data=await res.json().catch(()=>({}));if(!res.ok)throw new Error(data.error||data.message||`HTTP ${res.status}`);return data}
+function statusBadge(ok){return `<span class="rounded-full px-2 py-1 text-xs ${ok?'bg-emerald-500/10 text-emerald-300':'bg-red-500/10 text-red-300'}">${ok?'Healthy':'Unavailable'}</span>`}
+async function refreshAll(){await Promise.allSettled([loadProviders(),loadStats(),loadDeepSeekAccounts()])}
+async function loadProviders(){try{const result=await jsonFetch('/admin/api/providers');$('provider-cards').innerHTML=result.data.map(p=>`<div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-5"><div class="flex items-center justify-between"><div><p class="text-xs uppercase tracking-wider text-slate-500">${esc(p.mode)}</p><h3 class="mt-1 text-lg font-semibold">${esc(p.name||p.id)}</h3></div>${statusBadge(p.healthy===true)}</div><div class="mt-5 flex justify-between text-sm"><span class="text-slate-400">Configured accounts</span><span class="font-mono">${p.accounts??(p.id==='deepseek'?'Connect to view':'—')}</span></div></div>`).join('');const healthy=result.data.filter(p=>p.healthy).length;$('global-status').textContent=`${healthy}/${result.data.length} providers healthy`;$('global-status').className=`rounded-full border px-3 py-1 text-xs ${healthy===result.data.length?'border-emerald-500/30 text-emerald-300':'border-amber-500/30 text-amber-300'}`}catch(e){notify(e.message,true)}}
+async function loadStats(){try{const d=await jsonFetch('/admin/api/stats');$('stat-requests').textContent=d.stats.totalRequests;$('stat-success').textContent=d.stats.totalRequests?`${(d.stats.successRequests/d.stats.totalRequests*100).toFixed(1)}%`:'100%';$('stat-latency').textContent=`${d.stats.avgLatency} ms`;$('base-url').textContent=location.origin;renderQwen(d.accounts)}catch(e){notify(e.message,true)}}
+function renderQwen(accounts){$('qwen-accounts').innerHTML=accounts.length?accounts.map(a=>`<div class="flex items-center justify-between gap-4 p-4"><div class="min-w-0"><div class="flex items-center gap-2"><p class="truncate text-sm font-medium">${esc(a.label)}</p><span class="text-[10px] uppercase text-slate-500">${esc(a.credentialKind)}</span></div><p class="mt-1 font-mono text-xs text-slate-500">${esc(a.credential)} · ${esc(a.source)}</p></div><div class="flex items-center gap-3">${statusBadge(a.ok)}${a.source==='dashboard'?`<button onclick="removeQwen('${esc(a.id)}')" class="text-xs text-red-400 hover:text-red-300">Remove</button>`:''}</div></div>`).join(''):'<p class="p-5 text-sm text-slate-500">No Qwen accounts configured.</p>'}
+async function addQwen(){try{await jsonFetch('/admin/api/providers/qwen/accounts',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({label:$('qwen-label').value,session:$('qwen-session').value})});$('qwen-session').value='';notify('Qwen account added.');await refreshAll()}catch(e){notify(e.message,true)}}
+async function removeQwen(id){if(!confirm('Remove this Qwen account from Conduit?'))return;try{await jsonFetch(`/admin/api/providers/qwen/accounts/${encodeURIComponent(id)}`,{method:'DELETE'});notify('Qwen account removed.');await refreshAll()}catch(e){notify(e.message,true)}}
+async function connectDeepSeek(){try{const d=await jsonFetch('/admin/api/providers/deepseek/session',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({password:$('ds-admin-password').value})});sessionStorage.setItem('conduit-ds-admin-token',d.token);$('ds-admin-password').value='';syncDsUi();notify(d.setup?'DeepSeek admin initialized and connected.':'DeepSeek service connected.');await refreshAll()}catch(e){notify(e.message,true)}}
+function disconnectDeepSeek(){sessionStorage.removeItem('conduit-ds-admin-token');syncDsUi();$('ds-accounts').innerHTML='<p class="p-5 text-sm text-slate-500">Connect the DeepSeek service to manage accounts.</p>'}
+function syncDsUi(){$('ds-connect-panel').classList.toggle('hidden',!!dsToken());$('ds-account-form').classList.toggle('hidden',!dsToken())}
+function toggleDsLogin(){const mobile=$('ds-login-type').value==='mobile';$('ds-email-wrap').classList.toggle('hidden',mobile);$('ds-mobile-wrap').classList.toggle('hidden',!mobile)}
+async function loadDeepSeekAccounts(){syncDsUi();if(!dsToken()){$('ds-accounts').innerHTML='<p class="p-5 text-sm text-slate-500">Connect the DeepSeek service to manage accounts.</p>';return}try{const d=await jsonFetch('/admin/api/providers/deepseek/accounts',{headers:{'x-deepseek-admin-token':dsToken()}});$('ds-accounts').innerHTML=d.accounts.length?d.accounts.map(a=>`<div class="flex items-center justify-between gap-4 p-4"><div class="min-w-0"><p class="truncate text-sm font-medium">${esc(a.identity)}</p><p class="mt-1 text-xs text-slate-500">Errors: ${a.errorCount}</p></div><div class="flex items-center gap-3"><span class="rounded-full bg-slate-800 px-2 py-1 text-xs text-slate-300">${esc(a.state)}</span><button onclick="removeDeepSeek(${a.index})" class="text-xs text-red-400 hover:text-red-300">Remove</button></div></div>`).join(''):'<p class="p-5 text-sm text-slate-500">No DeepSeek accounts configured.</p>'}catch(e){notify(e.message,true);if(/unauthorized/i.test(e.message))disconnectDeepSeek()}}
+async function addDeepSeek(){try{const mobile=$('ds-login-type').value==='mobile';await jsonFetch('/admin/api/providers/deepseek/accounts',{method:'POST',headers:{'content-type':'application/json','x-deepseek-admin-token':dsToken()},body:JSON.stringify({email:mobile?'':$('ds-email').value,mobile:mobile?$('ds-mobile').value:'',areaCode:mobile?$('ds-area').value:'',password:$('ds-password').value})});$('ds-password').value='';notify('DeepSeek account added and provider reloaded.');await refreshAll()}catch(e){notify(e.message,true)}}
+async function removeDeepSeek(index){if(!confirm('Remove this DeepSeek account from Conduit?'))return;try{await jsonFetch(`/admin/api/providers/deepseek/accounts/${index}`,{method:'DELETE',headers:{'x-deepseek-admin-token':dsToken()}});notify('DeepSeek account removed.');await refreshAll()}catch(e){notify(e.message,true)}}
+syncDsUi();refreshAll();setInterval(()=>{loadProviders();loadStats()},10000);
+</script>
+</body></html>

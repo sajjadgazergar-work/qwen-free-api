@@ -1,249 +1,150 @@
-# Qwen-Free-API
+# Conduit v0.1
 
-Unified OpenAI-compatible Gateway for Qwen Web API from scratch, mirroring the design and setup of `ds-free-api` but built for Alibaba's Qwen models.
+Conduit is an expandable, multi-provider harness that exposes website-backed AI providers through one OpenAI-compatible API and one provider-neutral control plane.
 
-## Features
+This release includes:
 
-- **Zero-cost API Gateway**: Wraps Qwen web platform capabilities into an OpenAI-compatible endpoint.
-- **Dynamic anti-bot bypass**: Built-in Baxia header spoofing (`bx-ua`, `bx-umidtoken`, `bx-v`) to bypass Aliyun WAF without requiring heavy headless browsers like Playwright/Puppeteer.
-- **Multimodal & Attachments support**: Supports parsing and uploading inline images/documents as attachments.
-- **Rotatable Account Pool**: Supports comma-separated tickets in environment variables or request headers.
-- **Robust stream handling**: SSE client-side streaming mapping Qwen's incremental response to OpenAI chat completion chunks.
-- **Validated tool calling**: Canonical Qwen function-call prompting, full JSON Schema preservation, OpenAI-compatible `tool_calls`, parallel calls, `tool_choice`, and multi-turn tool-result continuation.
+- **Qwen** — native TypeScript provider with multimodal requests, streaming, account rotation, and schema-validated tool calling.
+- **DeepSeek** — managed Rust provider using `ds-free-api` for TLS emulation, proof-of-work, login/session refresh, streaming, files, and its native tool-call repair pipeline.
+- **Unified dashboard** — add, inspect, and remove Qwen and DeepSeek accounts from Conduit at `/admin`.
+- **Unified model endpoint** — Qwen and DeepSeek models are returned by `GET /v1/models`.
+- **Unified chat endpoint** — `POST /v1/chat/completions` routes by model prefix or explicit provider.
 
-## Deployed URL
+## Architecture
 
-Your service is deployed on Railway and available at:
-`https://qwen-free-api-production.up.railway.app`
-
-## Quick Start
-
-### 1. Retrieve Qwen Session Token
-
-Log in to [chat.qwen.ai](https://chat.qwen.ai/), open developer tools (`F12`), go to **Application -> Cookies**, and copy the value of either:
-- `tongyi_sso_ticket`
-- `login_aliyunid_ticket`
-
-### 2. Run API Requests
-
-You can use the token directly as a Bearer token in your client header.
-
-#### Chat Completions
-
-```bash
-curl -X POST https://qwen-free-api-production.up.railway.app/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR_QWEN_TICKET" \
-  -d '{
-    "model": "qwen3.5-plus",
-    "messages": [
-      {
-        "role": "user",
-        "content": "Hello! Introduce yourself."
-      }
-    ],
-    "stream": true
-  }'
+```text
+OpenAI client
+     |
+     v
+Conduit :8000
+  |-- Qwen adapter (native)
+  |     |-- browser-session account pool
+  |     `-- canonical tool-call protocol + JSON Schema validation
+  |
+  `-- DeepSeek adapter (managed provider contract)
+        `-- ds-free-api :22217
+              |-- email/mobile account pool
+              |-- login + session refresh
+              `-- native transport and tool-call repair
 ```
 
-#### Tool Calling
+The DeepSeek process remains isolated behind a provider adapter because its transport requires specialized TLS behavior, a WASM proof-of-work solver, and lifecycle management. The user-facing control plane is not isolated: Conduit now proxies DeepSeek setup, account creation, removal, health, and status into its own dashboard.
 
-The gateway acts as a protocol adapter: it decides when a client-provided function is needed and returns OpenAI-compatible `assistant.tool_calls`. The client executes those functions and sends their results back in `role: "tool"` messages. The gateway never executes arbitrary client functions itself.
-
-```bash
-curl -X POST https://qwen-free-api-production.up.railway.app/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR_QWEN_TICKET" \
-  -d '{
-    "model": "qwen3-coder-plus",
-    "messages": [{"role":"user","content":"What time is it in Tehran?"}],
-    "tools": [{
-      "type": "function",
-      "function": {
-        "name": "get_time",
-        "description": "Get the current time in an IANA timezone.",
-        "parameters": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["timezone"],
-          "properties": {"timezone":{"type":"string"}}
-        }
-      }
-    }],
-    "tool_choice": "auto",
-    "parallel_tool_calls": true
-  }'
-```
-
-A tool request is returned in the standard shape:
-
-```json
-{
-  "choices": [{
-    "message": {
-      "role": "assistant",
-      "content": null,
-      "tool_calls": [{
-        "id": "call_...",
-        "type": "function",
-        "function": {
-          "name": "get_time",
-          "arguments": "{\"timezone\":\"Asia/Tehran\"}"
-        }
-      }]
-    },
-    "finish_reason": "tool_calls"
-  }]
-}
-```
-
-Send the assistant call and matching result back to continue the conversation:
-
-```json
-{
-  "model": "qwen3-coder-plus",
-  "messages": [
-    {"role":"user","content":"What time is it in Tehran?"},
-    {
-      "role":"assistant",
-      "content":null,
-      "tool_calls":[{
-        "id":"call_abc",
-        "type":"function",
-        "function":{"name":"get_time","arguments":"{\"timezone\":\"Asia/Tehran\"}"}
-      }]
-    },
-    {
-      "role":"tool",
-      "tool_call_id":"call_abc",
-      "name":"get_time",
-      "content":"{\"time\":\"14:30\"}"
-    }
-  ],
-  "tools": [{
-    "type":"function",
-    "function":{
-      "name":"get_time",
-      "description":"Get the current time in an IANA timezone.",
-      "parameters":{
-        "type":"object",
-        "additionalProperties":false,
-        "required":["timezone"],
-        "properties":{"timezone":{"type":"string"}}
-      }
-    }
-  }]
-}
-```
-
-Supported controls:
-
-- `tool_choice`: `"none"`, `"auto"`, `"required"`, or a named function choice.
-- `parallel_tool_calls`: set `false` to permit at most one call in a response.
-- Full nested JSON Schemas are retained and validated before calls are returned.
-- Invalid tool names, invalid arguments, missing results, duplicate results, and mismatched call IDs return structured errors instead of being silently repaired.
-
-#### Image Generations
-
-```bash
-curl -X POST https://qwen-free-api-production.up.railway.app/v1/images/generations \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR_QWEN_TICKET" \
-  -d '{
-    "prompt": "A beautiful cinematic painting of Tehran at night under rain",
-    "model": "qwen3.5-plus",
-    "n": 1,
-    "size": "1024x1024",
-    "response_format": "url"
-  }'
-```
-
-## Environment Variables
-
-Configure these in your Railway service variables:
-
-| Variable | Description |
-|---|---|
-| `PORT` | Listening port (Default: `8000`) |
-| `API_TOKENS` | Comma-separated list of Qwen tickets to use as a global pool. If set, you can call the API using any generic auth token. |
-| `ENABLE_SEARCH` | Set to `true` to enable web search query integration on Qwen backend (Default: `false`). |
-
----
-
-# Conduit v0.1: Qwen + DeepSeek
-
-This source tree is now the first Conduit release: one OpenAI-compatible entry
-point with two web providers.
-
-## Provider routing
-
-No new client endpoint is required. Send requests to `/v1/chat/completions`:
-
-- models beginning with `qwen` route to the native Qwen adapter;
-- models beginning with `deepseek-` route to the DeepSeek provider;
-- `"provider": "deepseek"` can explicitly select DeepSeek and is removed before
-  forwarding upstream;
-- `GET /v1/models` combines both providers;
-- `GET /admin/api/providers` reports provider configuration and health.
-
-The response includes `x-conduit-provider: qwen|deepseek` for observability.
-
-## Why DeepSeek is isolated
-
-The DeepSeek web transport needs TLS client emulation, a WASM proof-of-work
-solver, session lifecycle cleanup, account re-login, streaming repair, and file
-upload behavior. Conduit therefore keeps the audited Rust implementation as an
-isolated service instead of translating those security-sensitive details into a
-partial JavaScript clone. This also provides a stable provider boundary for
-adding future websites.
-
-The DeepSeek source is included under `providers/deepseek`. See
-`THIRD_PARTY_NOTICES.md` before redistribution.
-
-## Start v0.1
+## Start
 
 ```bash
 cp .env.example .env
-cp config/deepseek.toml.example config/deepseek.toml
-# Edit .env and config/deepseek.toml, then:
 docker compose up --build -d
 ```
 
-In `config/deepseek.toml`, add one or more account credentials:
+Open:
 
-```toml
-[[ds_core.accounts]]
-email = "you@example.com"
-mobile = ""
-area_code = ""
-password = "your-password"
+- Dashboard: `http://localhost:8000/admin`
+- OpenAI base URL: `http://localhost:8000/v1`
+
+The included DeepSeek configuration starts empty. On the dashboard:
+
+1. Enter a new DeepSeek service admin password (minimum six characters). The first connection initializes the managed service; later connections use the same password.
+2. Add a DeepSeek account using either email/password or mobile/area-code/password.
+3. The managed provider logs in and refreshes its web session internally.
+
+Both provider stores persist under `./data`. DeepSeek’s mutable configuration persists in `./config/deepseek.toml`.
+
+## Qwen account onboarding
+
+Qwen authentication is Alibaba browser SSO rather than DeepSeek’s stable account-password API. It may require CAPTCHA, OTP, federated login, passkey approval, or device-risk verification. Conduit therefore does **not** collect or replay an Alibaba password.
+
+Instead:
+
+1. Use **Open Qwen login** on the Conduit dashboard.
+2. Complete login directly with Qwen/Alibaba in the browser.
+3. Import the resulting browser session into Conduit. Supported forms are a complete Cookie header, `tongyi_sso_ticket`, `login_aliyunid_ticket`, or a supported Qwen web bearer session.
+4. Give it an account label. Conduit persists, masks, rotates, cools down, and removes it as an account entry.
+
+This is account-based onboarding with browser-mediated authentication. It avoids storing the Alibaba password and remains compatible with interactive login challenges. A future browser-extension/device handoff can automate session transfer without changing the provider account contract.
+
+## Routing
+
+Send all requests to `/v1/chat/completions`.
+
+| Selection | Provider |
+|---|---|
+| `model: "qwen..."` | Qwen |
+| `model: "deepseek-..."` | DeepSeek |
+| `provider: "deepseek"` | DeepSeek (explicit override) |
+
+Responses include `x-conduit-provider: qwen` or `x-conduit-provider: deepseek`.
+
+## Models
+
+```bash
+curl http://localhost:8000/v1/models
 ```
 
-DeepSeek obtains and refreshes its bearer token internally. Conduit never sends
-those account passwords to API clients.
+Default DeepSeek IDs:
 
-For Qwen, put a comma-separated credential pool in `QWEN_TOKENS`. Supported
-values remain complete Cookie headers, `login_aliyunid_ticket`,
-`tongyi_sso_ticket`, and currently supported Qwen web bearer values.
+- `deepseek-default`
+- `deepseek-expert`
+- `deepseek-vision`
 
-## Qwen username/password status
+Qwen exposes its model aliases and thinking/fast variants from the native adapter.
 
-Direct server-side email/password login is intentionally **not** implemented in
-v0.1. Unlike DeepSeek's stable `/users/login` flow, Qwen authentication is an
-Alibaba identity/SSO browser flow that may involve CAPTCHA, OTP, federated login,
-and device-risk checks. Automating it by replaying credentials would be brittle
-and would encourage storing passwords in plaintext. The provider boundary is
-ready for a future user-driven browser/device authorization flow, but Conduit
-will not pretend that a reliable password endpoint exists.
+## Chat example
+
+```bash
+curl http://localhost:8000/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model": "deepseek-default",
+    "messages": [{"role":"user","content":"Hello"}],
+    "stream": false
+  }'
+```
+
+Change the model to `qwen3.7-plus` to use Qwen.
 
 ## Tool calling
 
-Qwen uses Conduit's canonical schema-preserving tool protocol and bounded repair
-step. DeepSeek keeps its native three-tier tool-call parser and repair pipeline.
-Both produce the same OpenAI `assistant.tool_calls`, continuation messages, SSE
-chunks, and `finish_reason: "tool_calls"` contract at the public endpoint.
+The public contract is OpenAI-compatible for both providers:
 
-This is deliberate for v0.1: normalize the external protocol while allowing
-each model family to use the prompt grammar and recovery behavior it follows
-best. A later shared provider contract can consolidate metrics and conformance
-tests without forcing one model's internal tags onto another.
+- client sends `tools`, `tool_choice`, and optionally `parallel_tool_calls`;
+- Conduit returns `assistant.tool_calls` and `finish_reason: "tool_calls"`;
+- client executes its functions and returns matching `role: "tool"` messages;
+- provider generates the next response.
+
+Qwen preserves full nested JSON Schemas, validates generated arguments with AJV, rejects unknown tools, validates tool-call/result continuation, supports repeated canonical `<tool_call>` blocks, and performs one bounded protocol repair. DeepSeek retains its model-specific parser and repair pipeline while exposing the same external OpenAI contract.
+
+## Environment
+
+| Variable | Default | Purpose |
+|---|---:|---|
+| `PORT` | `8000` | Conduit HTTP port |
+| `ADMIN_PASSWORD` | empty | Optional Basic Auth for Conduit dashboard routes |
+| `QWEN_TOKENS` | empty | Optional comma-separated bootstrap Qwen sessions |
+| `QWEN_ACCOUNT_COOLDOWN_MS` | `30000` | Initial account cooldown after an upstream failure |
+| `CONDUIT_DATA_DIR` | `./data` | Persistent native-provider state |
+| `DEEPSEEK_BASE_URL` | `http://deepseek:22217` | Managed provider address |
+| `DEEPSEEK_UPSTREAM_API_KEY` | empty | Optional DeepSeek service API key |
+| `DEEPSEEK_TIMEOUT_MS` | `180000` | DeepSeek proxy timeout |
+| `DEEPSEEK_MODELS` | defaults | Comma-separated public model IDs |
+
+## Provider extension contract
+
+New providers should be added under `src/providers/` and implement these boundaries:
+
+1. request selection/routing;
+2. model discovery;
+3. chat proxy or native completion adapter;
+4. health/status;
+5. account management operations;
+6. normalized public errors and `x-conduit-provider` observability.
+
+Provider-specific authentication and tool grammar stay behind the adapter. The dashboard and OpenAI API remain provider-neutral.
+
+## Security and licensing
+
+- Conduit masks account secrets in all dashboard responses.
+- DeepSeek admin JWTs are kept in browser session storage and are not persisted by the dashboard.
+- Account passwords are submitted only to the local managed DeepSeek service and persisted by that service with owner-only file permissions.
+- Qwen/Alibaba passwords are never collected.
+- `ds-free-api` is GPLv3. Its source and license are included. Review `THIRD_PARTY_NOTICES.md` before distribution.

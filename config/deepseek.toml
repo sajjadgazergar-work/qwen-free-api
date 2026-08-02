@@ -1,0 +1,24 @@
+# Top-level API keys are optional because the service is internal to Conduit.
+api_keys = []
+
+[server]
+host = "0.0.0.0"
+port = 22217
+cors_origins = ["http://localhost:22217", "http://localhost:8000"]
+
+[ds_core]
+# Add DeepSeek email/mobile accounts from the Conduit dashboard.
+# They are persisted here automatically by ds-free-api.
+accounts = []
+model_types = ["default", "expert", "vision"]
+max_input_tokens = [1048576, 1048576, 1048576]
+max_output_tokens = [384000, 384000, 384000]
+input_character_limits = [2621440, 163840, 2621440]
+model_aliases = []
+
+[proxy]
+
+[admin]
+password_hash = ""
+jwt_secret = ""
+jwt_issued_at = 0

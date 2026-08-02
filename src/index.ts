@@ -1102,4 +1102,14 @@ app.post('/v1/chat/completions', async (req: Request, res: Response) => {
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+  try {
+    console.log('cwd:', process.cwd());
+    console.log('cwd contents:', fs.readdirSync(process.cwd()));
+    console.log('__dirname:', __dirname);
+    console.log('__dirname contents:', fs.readdirSync(__dirname));
+    const targetPath = path.join(process.cwd(), 'public/admin.html');
+    console.log(`targetPath (${targetPath}) exists:`, fs.existsSync(targetPath));
+  } catch (err: any) {
+    console.log('Debug logging failed:', err.message);
+  }
 });

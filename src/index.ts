@@ -565,70 +565,282 @@ async function uploadAttachments(attachments: Attachment[], ticket: string, baxi
 }
 
 // ============================================
-// Message & Request Converters
+// Message & Request Converters (Tool calling & flattening)
 // ============================================
 
 interface OpenAiMessage {
   role: string;
   content: string | any[];
+  tool_calls?: any[];
+  tool_call_id?: string;
+  name?: string;
 }
 
-function parseIncomingMessages(messages: OpenAiMessage[]) {
-  const safeMessages = Array.isArray(messages) ? messages : [];
-  const normalized = safeMessages.map(message => {
-    let text = '';
-    const attachments: Attachment[] = [];
+const TOOL_CALL_INSTRUCTION = `You are an action-request serializer for an API client.
 
-    if (typeof message.content === 'string') {
-      text = message.content;
-    } else if (Array.isArray(message.content)) {
-      for (const part of message.content) {
-        if (!part) continue;
-        if (part.type === 'text') {
-          text += (part.text || '');
-        } else if (part.type === 'image_url') {
-          attachments.push({
-            source: part.image_url.url,
-            explicitType: 'image'
-          });
-        } else if (part.type === 'file') {
-          attachments.push({
-            source: part.file.file_data,
-            filename: part.file.filename,
-            explicitType: 'document'
-          });
-        }
+When the next assistant step requires a client capability (reading files, running commands, writing files, searching, listing directories, browsing, loading skills, etc.), serialize exactly one request as XML and output nothing else:
+
+<tool_calls>
+  <invoke name="CAPABILITY_NAME">
+    <parameter name="param"><![CDATA[value]]></parameter>
+  </invoke>
+</tool_calls>
+
+IMPORTANT:
+- You do not execute actions yourself. The API client executes the XML request after your response.
+- Never simulate command output, file contents, browser state, skill loading, or any other result.
+- The capability names listed below are valid client-side names. Never write prose such as "Tool X does not exist".
+- Use only exact names from the available capability list.
+- If you request the Skill capability, always include its required \`skill\` parameter. Example: <parameter name="skill"><![CDATA[pentest-assistant-reasoning]]></parameter>.
+- For multi-step tasks, serialize ONE capability request first. You will receive the result, then you can request the next step.
+- Put every argument in a <parameter> tag. Use CDATA for paths, commands, file contents, JSON, and multiline values.
+- Do not wrap the XML block in Markdown fences.
+- Do not use legacy <|tool_call|> tags.
+- When no action is needed (greetings, general knowledge), respond normally with text.`;
+
+function formatToolsPrompt(tools: any[]): string {
+  const lines: string[] = [];
+  const exactNames: string[] = [];
+  for (const tool of tools) {
+    if (tool.type !== 'function') continue;
+    const fn = tool.function || {};
+    const name = fn.name;
+    exactNames.push(name);
+    const desc = fn.description || '';
+    const params = fn.parameters || {};
+    const props = params.properties || {};
+    const required = params.required || [];
+    const paramParts: string[] = [];
+    for (const [pname, pinfo] of Object.entries(props) as any[]) {
+      const ptype = pinfo.type || 'string';
+      const pdesc = pinfo.description || '';
+      const req = required.includes(pname) ? ' (required)' : '';
+      paramParts.push(`    - ${pname}: ${ptype}${req}${pdesc ? ' — ' + pdesc : ''}`);
+    }
+    lines.push(`- ${name}: ${desc}`);
+    if (paramParts.length > 0) {
+      lines.push(...paramParts);
+    }
+  }
+  if (exactNames.length > 0) {
+    return `Exact client capability names: ${exactNames.join(', ')}\n${lines.join('\n')}`;
+  }
+  return lines.join('\n');
+}
+
+function formatAssistantToolCalls(toolCalls: any[]): string {
+  const lines = ['<tool_calls>'];
+  for (const tc of toolCalls) {
+    const fn = tc.function || {};
+    const name = fn.name || '';
+    let args = fn.arguments || {};
+    if (typeof args === 'string') {
+      try {
+        args = JSON.parse(args);
+      } catch {
+        args = { arguments: args };
       }
     }
+    if (typeof args !== 'object' || args === null) {
+      args = { arguments: args };
+    }
+    lines.push(`  <invoke name="${name}">`);
+    for (const [key, value] of Object.entries(args)) {
+      const valStr = typeof value === 'string' ? value : JSON.stringify(value);
+      const cdataVal = `<![CDATA[${valStr.replace(/]]>/g, ']]]]><![CDATA[>')}]]>`;
+      lines.push(`    <parameter name="${key}">${cdataVal}</parameter>`);
+    }
+    lines.push('  </invoke>');
+  }
+  lines.push('</tool_calls>');
+  return lines.join('\n');
+}
 
-    return {
-      role: message.role || 'user',
-      text,
-      attachments,
-    };
-  });
+function getAttachmentsFromContent(content: string | any[]): Attachment[] {
+  const attachments: Attachment[] = [];
+  if (Array.isArray(content)) {
+    for (const part of content) {
+      if (!part) continue;
+      if (part.type === 'image_url') {
+        attachments.push({
+          source: part.image_url.url,
+          explicitType: 'image'
+        });
+      } else if (part.type === 'file') {
+        attachments.push({
+          source: part.file.file_data,
+          filename: part.file.filename,
+          explicitType: 'document'
+        });
+      }
+    }
+  }
+  return attachments;
+}
 
-  if (normalized.length === 0) {
-    return { content: '', attachments: [] as Attachment[] };
+function flattenMessages(messages: OpenAiMessage[], tools?: any[]): { content: string; attachments: Attachment[] } {
+  const parts: string[] = [];
+  const toolNameById: Record<string, string> = {};
+
+  if (tools && tools.length > 0) {
+    const toolDesc = formatToolsPrompt(tools);
+    parts.push(`[System]\n${TOOL_CALL_INSTRUCTION}\n\nAvailable tools:\n${toolDesc}`);
   }
 
-  const last = normalized[normalized.length - 1];
-  const history = normalized.slice(0, -1)
-    .map(m => {
-      if (!m.text) return '';
-      const role = m.role === 'assistant' ? 'Assistant' : m.role === 'system' ? 'System' : 'User';
-      return `[${role}]: ${m.text}`;
-    })
-    .filter(Boolean)
-    .join('\n\n');
+  for (const msg of messages) {
+    const role = msg.role || 'user';
+    let content = '';
 
-  const lastText = last.text || (last.attachments.length > 0 ? '请结合附件内容回答。' : '');
-  const merged = history ? `${history}\n\n[User]: ${lastText}` : lastText;
+    if (typeof msg.content === 'string') {
+      content = msg.content;
+    } else if (Array.isArray(msg.content)) {
+      content = msg.content
+        .map(part => {
+          if (!part) return '';
+          if (part.type === 'text') return part.text || '';
+          return '';
+        })
+        .join(' ');
+    }
+
+    if (role === 'system') {
+      parts.push(`[System]\n${content}`);
+    } else if (role === 'assistant') {
+      if (msg.tool_calls && msg.tool_calls.length > 0) {
+        for (const tc of msg.tool_calls) {
+          const fn = tc.function || {};
+          const callId = tc.id || '?';
+          const toolName = fn.name || '?';
+          toolNameById[callId] = toolName;
+        }
+        parts.push(`[Assistant]\nPrevious client capability request already sent:\n${formatAssistantToolCalls(msg.tool_calls)}`);
+      } else if (content) {
+        parts.push(`[Assistant]\n${content}`);
+      }
+    } else if (role === 'tool') {
+      const toolCallId = msg.tool_call_id || '?';
+      const toolName = toolNameById[toolCallId] || msg.name || 'unknown_tool';
+      parts.push(`[Tool Result]\nTool name: ${toolName}\nCall ID: ${toolCallId}\nResult:\n${content}\nUse this result to continue. If another action is needed, request exactly one next client capability.`);
+    } else {
+      parts.push(`[User]\n${content}`);
+    }
+  }
+
+  // Add a soft format reminder at the end for recency bias
+  if (tools && tools.length > 0) {
+    const toolNames = tools.map(t => t.function?.name).filter(Boolean);
+    const namesStr = toolNames.join(', ');
+    const lastMsg = messages[messages.length - 1];
+    const lastRole = lastMsg ? lastMsg.role : 'user';
+
+    let reminder = '';
+    if (lastRole === 'tool') {
+      reminder = `Your available client capabilities: ${namesStr}. You just received a tool result. Use it to answer normally unless another tool is strictly necessary. If another action is needed, emit exactly one XML <tool_calls> block. Never write 'Tool X does not exist' in the final answer.`;
+    } else {
+      reminder = `Your available client capabilities: ${namesStr}. If the next step requires an action, emit exactly one XML <tool_calls> block. If no action is needed, answer normally.`;
+    }
+    parts.push(`[System Reminder]\n${reminder}`);
+  }
+
+  // Extract attachments from the last user message
+  let lastAttachments: Attachment[] = [];
+  if (messages.length > 0) {
+    const last = messages[messages.length - 1];
+    lastAttachments = getAttachmentsFromContent(last.content);
+  }
 
   return {
-    content: merged,
-    attachments: last.attachments,
+    content: parts.join('\n\n'),
+    attachments: lastAttachments
   };
+}
+
+// Normalize confusable Unicode characters from Qwen
+function normalizeMarkupChars(text: string): string {
+  return text
+    .replace(/｜/g, '|')
+    .replace(/＜/g, '<')
+    .replace(/＞/g, '>');
+}
+
+// Parse XML/DSML tool calls from Qwen text stream
+function parseXmlToolCalls(text: string): any[] | null {
+  const normalized = normalizeMarkupChars(text || '');
+  const match = normalized.match(/<tool_calls\b[^>]*>([\s\S]*?)<\/tool_calls>/i);
+  let toolCallsBlock = '';
+
+  if (match) {
+    toolCallsBlock = match[1];
+  } else {
+    // If no closing tag, attempt to parse partial/truncated blocks (stream repair)
+    const startMatch = normalized.match(/<tool_calls\b[^>]*>([\s\S]*)/i);
+    if (startMatch) {
+      toolCallsBlock = startMatch[1];
+    }
+  }
+
+  if (!toolCallsBlock) return null;
+
+  const invokeRegex = /<invoke\s+name="([^"]+)"\b[^>]*>([\s\S]*?)<\/invoke>/gi;
+  const calls: any[] = [];
+  let m;
+
+  while ((m = invokeRegex.exec(toolCallsBlock)) !== null) {
+    const name = m[1].trim();
+    const inner = m[2];
+    const args: Record<string, any> = {};
+
+    // Match parameters inside invoke: <parameter name="key">val</parameter>
+    const paramRegex = /<parameter\s+name="([^"]+)"\b[^>]*>([\s\S]*?)<\/parameter>/gi;
+    let pm;
+    while ((pm = paramRegex.exec(inner)) !== null) {
+      const pname = pm[1].trim();
+      let pval = pm[2].trim();
+      // Unwrap CDATA if present
+      const cdataMatch = pval.match(/<!\[CDATA\[([\s\S]*?)]]>/i);
+      if (cdataMatch) {
+        pval = cdataMatch[1];
+      }
+      args[pname] = pval;
+    }
+
+    // Also support direct parameter tags for Qwen3.7 lenient format (e.g. <path>...</path>)
+    const directRegex = /<([a-zA-Z0-9_-]+)\b[^>]*>([\s\S]*?)<\/\1>/gi;
+    let dm;
+    while ((dm = directRegex.exec(inner)) !== null) {
+      const tag = dm[1].toLowerCase();
+      if (tag === 'parameter' || tag === 'invoke') continue;
+      let val = dm[2].trim();
+      const cdataMatch = val.match(/<!\[CDATA\[([\s\S]*?)]]>/i);
+      if (cdataMatch) {
+        val = cdataMatch[1];
+      }
+      args[dm[1]] = val;
+    }
+
+    calls.push({
+      id: `call_${uuidv4().replace(/-/g, '').substring(0, 12)}`,
+      type: 'function',
+      function: {
+        name,
+        arguments: JSON.stringify(args)
+      }
+    });
+  }
+
+  return calls.length > 0 ? calls : null;
+}
+
+function stripToolCallsMarkup(text: string): string {
+  return text.replace(/<tool_calls\b[^>]*>[\s\S]*?(<\/tool_calls>|$)/gi, '').trim();
+}
+
+function getPrefixText(text: string): string {
+  const match = text.match(/<tool_calls\b/i);
+  if (match && match.index !== undefined) {
+    return text.substring(0, match.index).trim();
+  }
+  return text;
 }
 
 // Size Mapping for Images
@@ -1100,7 +1312,8 @@ app.post('/v1/chat/completions', async (req: Request, res: Response) => {
     }
     const chatId = createResp.data.data.id;
 
-    const parsed = parseIncomingMessages(messages);
+    const tools = req.body.tools;
+    const parsed = flattenMessages(messages, tools);
     const uploadedFiles = parsed.attachments.length > 0 
       ? await uploadAttachments(parsed.attachments, ticket, baxia)
       : [];
@@ -1158,9 +1371,13 @@ app.post('/v1/chat/completions', async (req: Request, res: Response) => {
     const createdTime = Math.floor(Date.now() / 1000);
     const sseParsed = parseQwenSsePayload(qwenResp.data);
 
+    const parsedToolCalls = parseXmlToolCalls(sseParsed.content);
+
     if (!stream) {
       const prompt_tokens = Math.ceil(parsed.content.length / 4);
       const completion_tokens = Math.ceil(sseParsed.content.length / 4);
+      const cleanContent = stripToolCallsMarkup(sseParsed.content);
+
       return res.json({
         id: responseId,
         object: 'chat.completion',
@@ -1170,10 +1387,11 @@ app.post('/v1/chat/completions', async (req: Request, res: Response) => {
           index: 0,
           message: {
             role: 'assistant',
-            content: sseParsed.content,
-            ...(sseParsed.reasoning ? { reasoning_content: sseParsed.reasoning } : {})
+            content: parsedToolCalls ? (cleanContent || null) : sseParsed.content,
+            ...(sseParsed.reasoning ? { reasoning_content: sseParsed.reasoning } : {}),
+            ...(parsedToolCalls ? { tool_calls: parsedToolCalls } : {})
           },
-          finish_reason: 'stop',
+          finish_reason: parsedToolCalls ? 'tool_calls' : 'stop',
         }],
         usage: {
           prompt_tokens,
@@ -1187,7 +1405,48 @@ app.post('/v1/chat/completions', async (req: Request, res: Response) => {
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
 
+    if (parsedToolCalls) {
+      const prefixText = getPrefixText(sseParsed.content);
+      const cleanPrefix = stripToolCallsMarkup(prefixText);
+
+      if (cleanPrefix) {
+        res.write(`data: ${JSON.stringify({
+          id: responseId,
+          object: 'chat.completion.chunk',
+          created: createdTime,
+          model: actualModel,
+          choices: [{
+            index: 0,
+            delta: { role: 'assistant', content: cleanPrefix },
+            finish_reason: null,
+          }],
+        })}\n\n`);
+      }
+
+      res.write(`data: ${JSON.stringify({
+        id: responseId,
+        object: 'chat.completion.chunk',
+        created: createdTime,
+        model: actualModel,
+        choices: [{
+          index: 0,
+          delta: { tool_calls: parsedToolCalls },
+          finish_reason: 'tool_calls',
+        }],
+      })}\n\n`);
+
+      res.write('data: [DONE]\n\n');
+      res.end();
+      return;
+    }
+
     for (const event of sseParsed.events) {
+      if (event.delta && typeof event.delta.content === 'string') {
+        event.delta.content = stripToolCallsMarkup(event.delta.content);
+        if (!event.delta.content && !event.delta.reasoning_content) {
+          continue;
+        }
+      }
       const dataStr = JSON.stringify({
         id: responseId,
         object: 'chat.completion.chunk',

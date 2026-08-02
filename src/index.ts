@@ -98,6 +98,30 @@ app.use((req, res, next) => {
   next();
 });
 
+// Admin Basic Authentication Middleware
+app.use((req, res, next) => {
+  const adminPassword = process.env.ADMIN_PASSWORD || '';
+  if (!adminPassword) {
+    return next();
+  }
+
+  if (req.url.startsWith('/admin')) {
+    const authHeader = req.headers.authorization || '';
+    if (authHeader.startsWith('Basic ')) {
+      const credentials = Buffer.from(authHeader.substring(6), 'base64').toString('utf8');
+      const [username, password] = credentials.split(':');
+      if (password === adminPassword) {
+        return next();
+      }
+    }
+
+    res.setHeader('WWW-Authenticate', 'Basic realm="Admin Dashboard"');
+    return res.status(401).send('Unauthorized: Invalid credentials.');
+  }
+
+  next();
+});
+
 // ============================================
 // Baxia / SEC Anti-bot Heuristic Spoofing
 // ============================================

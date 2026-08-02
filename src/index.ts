@@ -171,12 +171,25 @@ function generateCookie(ticket: string): string {
   return `login_aliyunid_ticket=${ticket}; tongyi_sso_ticket=${ticket}`;
 }
 
+// Upstream Authentication Headers Generator (supporting legacy cookies & newer JWT tokens)
+function buildAuthHeaders(ticket: string): Record<string, string> {
+  const headers: Record<string, string> = {};
+  if (ticket.startsWith('ey') || ticket.length > 100) {
+    // Newer Qwen Web API v2 token (JWT format)
+    headers['Authorization'] = `Bearer ${ticket}`;
+  } else {
+    // Legacy Qwen Tongyi SSO ticket cookies
+    headers['Cookie'] = generateCookie(ticket);
+  }
+  return headers;
+}
+
 // Ticket selector utilizing the dynamic account pool & Bearer headers
 function selectAccountTicket(authHeader?: string): { ticket: string; accountRef?: Account } {
   // 1. Check if auth header passes a custom/live ticket directly
   if (authHeader && authHeader.startsWith('Bearer ')) {
     const raw = authHeader.substring(7).trim();
-    if (raw && !raw.includes('__REPLACE_ME__') && (raw.length > 40 || raw.includes('='))) {
+    if (raw && !raw.includes('__REPLACE_ME__') && (raw.length > 40 || raw.includes('=') || raw.startsWith('ey'))) {
       // Direct pass-through
       return { ticket: raw };
     }
@@ -295,7 +308,7 @@ async function requestUploadToken(file: LoadedFile, ticket: string, baxia: any) 
       'timezone': new Date().toUTCString(),
       'Referer': QWEN_WEB_REFERER,
       'User-Agent': WEB_USER_AGENT,
-      'Cookie': generateCookie(ticket),
+      ...buildAuthHeaders(ticket),
       'x-request-id': uuidv4(),
     }
   });
@@ -418,7 +431,7 @@ async function ensureUploadStatusForNonVideo(filetype: string, ticket: string, b
         'source': 'web',
         'timezone': new Date().toUTCString(),
         'Referer': QWEN_WEB_REFERER,
-        'Cookie': generateCookie(ticket),
+        ...buildAuthHeaders(ticket),
         'x-request-id': uuidv4(),
       }
     });
@@ -447,7 +460,7 @@ async function parseDocumentIfNeeded(fileId: string, filetype: string, file: Loa
       'source': 'web',
       'timezone': new Date().toUTCString(),
       'Referer': QWEN_WEB_REFERER,
-      'Cookie': generateCookie(ticket),
+      ...buildAuthHeaders(ticket),
       'x-request-id': uuidv4(),
     }
   });
@@ -805,27 +818,86 @@ app.delete('/admin/api/logs', (req: Request, res: Response) => {
 // Original OpenAI Compatibility Routes
 // ============================================
 
-function resolveModelName(model?: string): string {
-  if (!model) return 'qwen3-235b-a22b';
-  const m = model.toLowerCase().trim();
-  if (m === 'qwen3-coder-plus' || m === 'qwen3-coder' || m === 'qwen-coder') return 'qwen3-coder-plus';
-  if (m === 'qwen3-coder-30b-a3b-instruct' || m === 'qwen3-coder-flash' || m.includes('coder-flash') || m.includes('coder-30b')) return 'qwen3-coder-30b-a3b-instruct';
-  if (m === 'qwen3-30b-a3b' || m === 'qwen3-30b' || m.includes('30b') || m.includes('plus') || m.includes('turbo')) return 'qwen3-30b-a3b';
-  if (m === 'qwen-max-latest' || m === 'qwen2.5-max' || m.includes('max')) return 'qwen-max-latest';
-  return 'qwen3-235b-a22b';
+interface ResolvedModel {
+  actualModel: string;
+  thinkingEnabled: boolean;
+  autoThinking?: boolean;
+}
+
+function resolveModelName(model?: string): ResolvedModel {
+  if (!model) {
+    return { actualModel: 'qwen3.7-max', thinkingEnabled: true, autoThinking: true };
+  }
+  let m = model.toLowerCase().trim();
+  let thinkingEnabled = true;
+  let autoThinking = true;
+
+  if (m.endsWith('-thinking')) {
+    m = m.replace('-thinking', '');
+    thinkingEnabled = true;
+    autoThinking = false;
+  } else if (m.endsWith('-fast')) {
+    m = m.replace('-fast', '');
+    thinkingEnabled = false;
+  }
+
+  let actualModel = 'qwen3.7-max';
+  if (m === 'qwen3.7-max' || m === 'qwen-max' || m.includes('3.7-max') || m.includes('max-latest') || m === 'qwen-max-latest') {
+    actualModel = 'qwen3.7-max';
+  } else if (m === 'qwen3.7-plus' || m === 'qwen-plus' || m.includes('3.7-plus') || m.includes('plus-latest')) {
+    actualModel = 'qwen3.7-plus';
+  } else if (m === 'qwen3.6-plus' || m.includes('3.6-plus')) {
+    actualModel = 'qwen3.6-plus';
+  } else if (m === 'qwen3.6-max' || m.includes('3.6-max')) {
+    actualModel = 'qwen3.6-max-preview';
+  } else if (m === 'qwen3.6-27b') {
+    actualModel = 'qwen3.6-27b';
+  } else if (m === 'qwen3-coder-plus' || m === 'qwen-coder') {
+    actualModel = 'qwen3-coder-plus';
+  } else if (m === 'qwen3-vl-plus' || m === 'qwen-vl') {
+    actualModel = 'qwen3-vl-plus';
+  } else if (m === 'qwen3-max') {
+    actualModel = 'qwen3-max-2026-01-23';
+  } else if (m === 'qwen3.5-plus') {
+    actualModel = 'qwen3.5-plus';
+  } else if (m === 'qwen3.5-flash') {
+    actualModel = 'qwen3.5-flash';
+  } else {
+    // Default fallback to flagship model
+    actualModel = 'qwen3.7-max';
+  }
+
+  return { actualModel, thinkingEnabled, autoThinking };
 }
 
 // Model List endpoint
 app.get('/v1/models', (req: Request, res: Response) => {
+  const baseModels = [
+    { id: 'qwen3.7-max', description: 'Flagship reasoning and intelligence model' },
+    { id: 'qwen3.7-plus', description: 'Next-gen flagship multimodal model' },
+    { id: 'qwen3.6-plus', description: 'Reasoning-enabled multimodal model' },
+    { id: 'qwen3.6-max', description: 'Prior generation flagship preview' },
+    { id: 'qwen3.6-27b', description: 'Compact and high-speed Qwen3.6 engine' },
+    { id: 'qwen3-coder-plus', description: 'Strong coding and tool-use model' },
+    { id: 'qwen3-vl-plus', description: 'Alibaba vision-language flagship' },
+    { id: 'qwen3-max', description: 'First generation Qwen3 flagship' },
+    { id: 'qwen3.5-plus', description: 'Legacy Qwen3.5 standard model' },
+    { id: 'qwen3.5-flash', description: 'Legacy Qwen3.5 high-speed model' },
+    { id: 'qwen-max', description: 'Alias for qwen3.7-max' },
+    { id: 'qwen-plus', description: 'Alias for qwen3.7-plus' },
+    { id: 'qwen-coder', description: 'Alias for qwen3-coder-plus' }
+  ];
+
+  const models: any[] = [];
+  for (const base of baseModels) {
+    models.push({ id: base.id, object: 'model', created: 1720000000, owned_by: 'qwen-free-api', description: base.description });
+    models.push({ id: `${base.id}-thinking`, object: 'model', created: 1720000000, owned_by: 'qwen-free-api', description: `${base.description} (Force thinking)` });
+    models.push({ id: `${base.id}-fast`, object: 'model', created: 1720000000, owned_by: 'qwen-free-api', description: `${base.description} (Fast mode, no thinking)` });
+  }
+
   res.json({
     object: 'list',
-    data: [
-      { id: 'qwen3-235b-a22b', object: 'model', created: 1720000000, owned_by: 'qwen-free-api', description: 'Most powerful Hybrid-of-Experts language model (235B-A22B-2507)' },
-      { id: 'qwen3-coder-plus', object: 'model', created: 1720000000, owned_by: 'qwen-free-api', description: 'Strong coding and tool-use model' },
-      { id: 'qwen3-30b-a3b', object: 'model', created: 1720000000, owned_by: 'qwen-free-api', description: 'Compact and high performance Mixture-of-Experts model' },
-      { id: 'qwen3-coder-30b-a3b-instruct', object: 'model', created: 1720000000, owned_by: 'qwen-free-api', description: 'Fast and accurate coding model (Coder-Flash)' },
-      { id: 'qwen-max-latest', object: 'model', created: 1720000000, owned_by: 'qwen-free-api', description: 'Standard Qwen2.5-Max language model' }
-    ]
+    data: models
   });
 });
 
@@ -843,14 +915,14 @@ app.post('/v1/images/generations', async (req: Request, res: Response) => {
       return res.status(400).json({ error: { message: 'prompt is required', type: 'invalid_request_error' } });
     }
 
-    const actualModel = resolveModelName(model);
+    const { actualModel } = resolveModelName(model);
     const qwenRatio = mapOpenAiImageSizeToQwenRatio(size);
     const baxia = await getBaxiaTokens();
 
     const createResp = await axios.post(`${QWEN_BASE_URL}/api/v2/chats/new`, {
       title: '新建对话',
       models: [actualModel],
-      chat_mode: 'guest',
+      chat_mode: 'normal',
       chat_type: 't2i',
       timestamp: Date.now(),
       project_id: '',
@@ -864,7 +936,7 @@ app.post('/v1/images/generations', async (req: Request, res: Response) => {
         'Referer': QWEN_GUEST_REFERER,
         'source': 'web',
         'User-Agent': WEB_USER_AGENT,
-        'Cookie': generateCookie(ticket),
+        ...buildAuthHeaders(ticket),
         'x-request-id': uuidv4(),
       }
     });
@@ -881,7 +953,7 @@ app.post('/v1/images/generations', async (req: Request, res: Response) => {
       version: '2.1',
       incremental_output: true,
       chat_id: chatId,
-      chat_mode: 'guest',
+      chat_mode: 'normal',
       model: actualModel,
       parent_id: null,
       messages: [{
@@ -921,7 +993,7 @@ app.post('/v1/images/generations', async (req: Request, res: Response) => {
         'version': '0.2.9',
         'Referer': QWEN_GUEST_REFERER,
         'User-Agent': WEB_USER_AGENT,
-        'Cookie': generateCookie(ticket),
+        ...buildAuthHeaders(ticket),
         'x-request-id': uuidv4(),
       }
     });
@@ -968,7 +1040,7 @@ app.post('/v1/chat/completions', async (req: Request, res: Response) => {
        return res.status(400).json({ error: { message: 'messages list is required', type: 'invalid_request_error' } });
     }
 
-    const actualModel = resolveModelName(model);
+    const { actualModel, thinkingEnabled, autoThinking } = resolveModelName(model);
     const baxia = await getBaxiaTokens();
     const enableSearch = process.env.ENABLE_SEARCH === 'true';
     const chatType = enableSearch ? 'search' : 't2t';
@@ -976,7 +1048,7 @@ app.post('/v1/chat/completions', async (req: Request, res: Response) => {
     const createResp = await axios.post(`${QWEN_BASE_URL}/api/v2/chats/new`, {
       title: '新建对话',
       models: [actualModel],
-      chat_mode: 'guest',
+      chat_mode: 'normal',
       chat_type: chatType,
       timestamp: Date.now(),
       project_id: '',
@@ -990,7 +1062,7 @@ app.post('/v1/chat/completions', async (req: Request, res: Response) => {
         'Referer': QWEN_GUEST_REFERER,
         'source': 'web',
         'User-Agent': WEB_USER_AGENT,
-        'Cookie': generateCookie(ticket),
+        ...buildAuthHeaders(ticket),
         'x-request-id': uuidv4(),
       }
     });
@@ -1011,7 +1083,7 @@ app.post('/v1/chat/completions', async (req: Request, res: Response) => {
       version: '2.1',
       incremental_output: true,
       chat_id: chatId,
-      chat_mode: 'guest',
+      chat_mode: 'normal',
       model: actualModel,
       parent_id: null,
       messages: [{
@@ -1026,10 +1098,10 @@ app.post('/v1/chat/completions', async (req: Request, res: Response) => {
         models: [actualModel],
         chat_type: chatType,
         feature_config: {
-          thinking_enabled: true,
+          thinking_enabled: thinkingEnabled,
           output_schema: 'phase',
           research_mode: 'normal',
-          auto_thinking: true,
+          auto_thinking: autoThinking,
           thinking_format: 'summary',
           auto_search: enableSearch,
         },
@@ -1049,7 +1121,7 @@ app.post('/v1/chat/completions', async (req: Request, res: Response) => {
         'version': '0.2.9',
         'Referer': QWEN_GUEST_REFERER,
         'User-Agent': WEB_USER_AGENT,
-        'Cookie': generateCookie(ticket),
+        ...buildAuthHeaders(ticket),
         'x-request-id': uuidv4(),
       },
       responseType: 'text',

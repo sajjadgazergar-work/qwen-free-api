@@ -2,46 +2,722 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Conduit Control Center</title>
+<title>Conduit - AI Infrastructure Management</title>
 <style>
-:root{color-scheme:dark;--bg:#080b12;--panel:#101620;--panel2:#151d29;--line:#263142;--text:#eef2f7;--muted:#97a3b5;--accent:#a3ff6f;--blue:#70b7ff;--danger:#ff6b7a;--warn:#ffc861}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 15% 0,#17304a 0,transparent 31%),var(--bg);color:var(--text);font:14px/1.5 Inter,ui-sans-serif,system-ui,-apple-system,sans-serif}.shell{max-width:1180px;margin:auto;padding:0 22px 60px}.topbar{height:72px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line)}.brand{display:flex;align-items:center;gap:12px}.mark{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;background:var(--accent);color:#071008;font-weight:900;font-size:18px}.brand h1{font-size:16px;margin:0}.brand p{margin:1px 0 0;color:var(--muted);font-size:12px}.status{border:1px solid var(--line);padding:7px 11px;border-radius:999px;color:var(--muted);font-size:12px}.hero{display:flex;align-items:end;justify-content:space-between;gap:28px;padding:46px 0 30px}.eyebrow{color:var(--accent);font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase}.hero h2{font-size:clamp(30px,5vw,52px);line-height:1.03;letter-spacing:-.045em;margin:8px 0 12px;max-width:700px}.hero p{color:var(--muted);max-width:650px;margin:0;font-size:15px}.button{border:0;border-radius:10px;padding:10px 14px;background:var(--accent);color:#071008;font-weight:750;cursor:pointer}.button:hover{filter:brightness(1.08)}.button.secondary{background:transparent;color:var(--text);border:1px solid var(--line)}.overview{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:28px}.provider-mini{background:rgba(16,22,32,.8);border:1px solid var(--line);border-radius:14px;padding:16px}.mini-top,.row,.section-head,.actions{display:flex;align-items:center;justify-content:space-between;gap:12px}.provider-mini h3{margin:0;font-size:15px}.provider-mini p{margin:12px 0 0;color:var(--muted);font-size:12px}.dot{width:8px;height:8px;border-radius:50%;background:var(--warn);box-shadow:0 0 0 4px #ffc86114}.dot.ok{background:var(--accent);box-shadow:0 0 0 4px #a3ff6f14}.dot.bad{background:var(--danger);box-shadow:0 0 0 4px #ff6b7a14}.workspace{display:grid;grid-template-columns:230px 1fr;gap:20px}.tabs{display:flex;flex-direction:column;gap:7px;position:sticky;top:18px;align-self:start}.tab{width:100%;text-align:left;background:transparent;border:1px solid transparent;color:var(--muted);border-radius:11px;padding:12px;cursor:pointer}.tab.active{background:var(--panel2);border-color:var(--line);color:var(--text)}.tab b{display:block;margin-bottom:2px}.tab small{font-size:11px}.panel{display:none}.panel.active{display:block}.card{background:rgba(16,22,32,.92);border:1px solid var(--line);border-radius:18px;overflow:hidden}.section-head{padding:22px;border-bottom:1px solid var(--line);align-items:start}.section-head h3{margin:3px 0 6px;font-size:23px;letter-spacing:-.025em}.section-head p{margin:0;color:var(--muted);max-width:620px}.tag{white-space:nowrap;border:1px solid var(--line);border-radius:999px;padding:6px 9px;color:var(--muted);font-size:11px}.setup{padding:22px;display:grid;gap:16px}.steps{display:flex;gap:8px;flex-wrap:wrap}.step{padding:6px 9px;border-radius:999px;background:#ffffff08;color:var(--muted);font-size:11px}.step strong{color:var(--accent);margin-right:5px}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}.field label{display:block;color:#c8d0dc;font-size:12px;font-weight:650;margin-bottom:7px}.field input,.field textarea,.field select{width:100%;border:1px solid var(--line);border-radius:10px;background:#0a0f17;color:var(--text);padding:11px 12px;outline:none;font:inherit}.field textarea{min-height:110px;resize:vertical;font:12px/1.5 ui-monospace,SFMono-Regular,monospace}.field input:focus,.field textarea:focus,.field select:focus{border-color:var(--blue);box-shadow:0 0 0 3px #70b7ff16}.hint{color:var(--muted);font-size:11px;margin-top:6px}.accounts{border-top:1px solid var(--line)}.account{padding:15px 22px;display:flex;align-items:center;justify-content:space-between;gap:14px;border-top:1px solid var(--line)}.account:first-child{border-top:0}.account-name{font-weight:700}.account-meta{font-size:11px;color:var(--muted);margin-top:2px}.badge{font-size:11px;padding:5px 8px;border-radius:999px;background:#a3ff6f12;color:var(--accent)}.remove{border:0;background:transparent;color:var(--danger);cursor:pointer}.empty{padding:20px 22px;color:var(--muted)}.api-card{margin-top:24px;padding:18px 20px;background:var(--panel);border:1px solid var(--line);border-radius:14px}.url{font:13px ui-monospace,SFMono-Regular,monospace;color:var(--blue);user-select:all}.notice{position:fixed;right:20px;bottom:20px;max-width:390px;padding:12px 15px;border-radius:11px;background:#14251b;border:1px solid #305f3e;color:#dfffe8;box-shadow:0 18px 60px #0008}.notice.error{background:#2a1519;border-color:#6a3039;color:#ffdce0}.hidden{display:none!important}@media(max-width:820px){.overview{grid-template-columns:1fr}.workspace{grid-template-columns:1fr}.tabs{position:static;display:grid;grid-template-columns:repeat(3,1fr)}.hero{align-items:start;flex-direction:column}.grid2{grid-template-columns:1fr}}@media(max-width:520px){.shell{padding:0 14px 40px}.tabs{grid-template-columns:1fr}.section-head{flex-direction:column}.actions{align-items:stretch;flex-direction:column}.button{width:100%}}
+:root{
+  color-scheme:dark;
+  --bg:#0e0e0e;
+  --bg-alt:#141414;
+  --card:#1a1a1a;
+  --card-hover:#222222;
+  --line:#282828;
+  --line-subtle:#202020;
+  --text:#ededed;
+  --text-muted:#9ca3af;
+  --text-subtle:#6b7280;
+  --brand:#e56a4a;
+  --brand-hover:#cc5236;
+  --brand-glow:rgba(229,106,74,0.15);
+  --success:#10b981;
+  --success-bg:rgba(16,185,129,0.1);
+  --danger:#ef4444;
+  --danger-bg:rgba(239,68,68,0.1);
+  --warning:#f59e0b;
+  --warning-bg:rgba(245,158,11,0.1);
+}
+*{box-sizing:border-box}
+body{
+  margin:0;
+  background:var(--bg);
+  color:var(--text);
+  font:13px/1.5 "Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+.shell{max-width:1200px;margin:0 auto;padding:0 24px 60px}
+.topbar{
+  height:64px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  border-bottom:1px solid var(--line);
+  margin-bottom:32px;
+}
+.brand{display:flex;align-items:center;gap:12px}
+.logo{
+  width:32px;
+  height:32px;
+  border-radius:8px;
+  background:linear-gradient(135deg, var(--brand), #cc5236);
+  color:#fff;
+  font-weight:800;
+  font-size:16px;
+  display:grid;
+  place-items:center;
+  box-shadow:0 2px 10px var(--brand-glow);
+}
+.brand h1{font-size:15px;font-weight:700;margin:0;letter-spacing:-0.01em}
+.brand p{margin:0;color:var(--text-subtle);font-size:11px}
+.status-pill{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  background:var(--bg-alt);
+  border:1px solid var(--line);
+  padding:6px 12px;
+  border-radius:20px;
+  font-size:12px;
+  color:var(--text-muted);
+}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--text-subtle)}
+.dot.ok{background:var(--success);box-shadow:0 0 8px var(--success)}
+.dot.bad{background:var(--danger);box-shadow:0 0 8px var(--danger)}
+.dot.warn{background:var(--warning);box-shadow:0 0 8px var(--warning)}
+
+.hero{
+  display:flex;
+  align-items:flex-end;
+  justify-content:space-between;
+  gap:24px;
+  margin-bottom:32px;
+  padding-bottom:16px;
+}
+.eyebrow{
+  color:var(--brand);
+  font-size:11px;
+  font-weight:700;
+  letter-spacing:0.1em;
+  text-transform:uppercase;
+  margin-bottom:6px;
+}
+.hero h2{
+  font-size:28px;
+  font-weight:800;
+  letter-spacing:-0.03em;
+  margin:0 0 8px;
+  line-height:1.2;
+}
+.hero p{color:var(--text-muted);margin:0;font-size:14px;max-width:600px}
+
+.btn{
+  background:var(--brand);
+  color:#fff;
+  border:none;
+  border-radius:8px;
+  padding:8px 16px;
+  font-size:13px;
+  font-weight:600;
+  cursor:pointer;
+  transition:all 0.15s ease;
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+}
+.btn:hover{background:var(--brand-hover);transform:translateY(-1px)}
+.btn.secondary{
+  background:var(--card);
+  color:var(--text);
+  border:1px solid var(--line);
+}
+.btn.secondary:hover{background:var(--card-hover);border-color:#444}
+.btn.danger{background:var(--danger-bg);color:var(--danger);border:1px solid rgba(239,68,68,0.2)}
+.btn.danger:hover{background:var(--danger);color:#fff}
+
+.overview-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));
+  gap:16px;
+  margin-bottom:36px;
+}
+.provider-card{
+  background:var(--card);
+  border:1px solid var(--line);
+  border-radius:12px;
+  padding:20px;
+  transition:border-color 0.2s ease, transform 0.2s ease;
+}
+.provider-card:hover{border-color:#383838;transform:translateY(-2px)}
+.card-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.card-head h3{margin:0;font-size:16px;font-weight:700}
+.card-meta{color:var(--text-muted);font-size:12px;margin:4px 0 0}
+.card-err{
+  margin-top:12px;
+  padding:8px 10px;
+  background:var(--danger-bg);
+  border:1px solid rgba(239,68,68,0.15);
+  border-radius:6px;
+  color:var(--danger);
+  font-size:11px;
+  word-break:break-word;
+}
+
+.tab-nav{
+  display:flex;
+  gap:8px;
+  border-bottom:1px solid var(--line);
+  margin-bottom:24px;
+}
+.tab-btn{
+  background:transparent;
+  border:none;
+  border-bottom:2px solid transparent;
+  color:var(--text-muted);
+  padding:10px 16px;
+  font-size:13px;
+  font-weight:600;
+  cursor:pointer;
+  transition:all 0.15s ease;
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+.tab-btn:hover{color:var(--text)}
+.tab-btn.active{
+  color:var(--brand);
+  border-bottom-color:var(--brand);
+}
+.tab-btn small{
+  background:var(--line);
+  color:var(--text-subtle);
+  padding:2px 6px;
+  border-radius:10px;
+  font-size:10px;
+}
+.tab-btn.active small{background:var(--brand-glow);color:var(--brand)}
+
+.panel{display:none}
+.panel.active{display:block}
+
+.form-card{
+  background:var(--card);
+  border:1px solid var(--line);
+  border-radius:12px;
+  padding:24px;
+  margin-bottom:24px;
+}
+.form-head{margin-bottom:20px;border-bottom:1px solid var(--line-subtle);padding-bottom:16px}
+.form-head h3{margin:0 0 4px;font-size:16px;font-weight:700}
+.form-head p{margin:0;color:var(--text-muted);font-size:12px}
+
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.field{margin-bottom:16px}
+.field label{display:block;font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:6px}
+input,select,textarea{
+  width:100%;
+  background:var(--bg);
+  border:1px solid var(--line);
+  border-radius:8px;
+  color:var(--text);
+  padding:10px 12px;
+  font:inherit;
+  font-size:13px;
+  outline:none;
+  transition:border-color 0.15s ease, box-shadow 0.15s ease;
+}
+input:focus,select:focus,textarea:focus{
+  border-color:var(--brand);
+  box-shadow:0 0 0 3px var(--brand-glow);
+}
+textarea{min-height:90px;resize:vertical;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px}
+.hint{color:var(--text-subtle);font-size:11px;margin-top:4px}
+
+.account-list{display:flex;flex-direction:column;gap:8px}
+.account-item{
+  background:var(--bg-alt);
+  border:1px solid var(--line);
+  border-radius:8px;
+  padding:12px 16px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:16px;
+}
+.acc-info h4{margin:0 0 2px;font-size:13px;font-weight:600}
+.acc-info p{margin:0;color:var(--text-muted);font-size:11px}
+
+.badge{
+  padding:3px 8px;
+  border-radius:12px;
+  font-size:11px;
+  font-weight:600;
+  display:inline-flex;
+  align-items:center;
+  gap:4px;
+}
+.badge.ok{background:var(--success-bg);color:var(--success)}
+.badge.bad{background:var(--danger-bg);color:var(--danger)}
+.badge.warn{background:var(--warning-bg);color:var(--warning)}
+
+.logs-table{
+  width:100%;
+  border-collapse:collapse;
+  font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
+  font-size:12px;
+}
+.logs-table th{
+  text-align:left;
+  padding:8px 12px;
+  color:var(--text-subtle);
+  font-weight:600;
+  border-bottom:1px solid var(--line);
+}
+.logs-table td{
+  padding:8px 12px;
+  border-bottom:1px solid var(--line-subtle);
+  color:var(--text-muted);
+}
+.logs-table tr:hover td{background:var(--card-hover);color:var(--text)}
+
+.footer-bar{
+  background:var(--card);
+  border:1px solid var(--line);
+  border-radius:12px;
+  padding:16px 20px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  margin-top:40px;
+}
+
+.notice{
+  position:fixed;
+  bottom:24px;
+  right:24px;
+  background:var(--card);
+  border:1px solid var(--brand);
+  border-left:4px solid var(--brand);
+  color:var(--text);
+  padding:12px 20px;
+  border-radius:8px;
+  box-shadow:0 8px 24px rgba(0,0,0,0.5);
+  font-size:13px;
+  font-weight:600;
+  z-index:9999;
+  transition:all 0.2s ease;
+}
+.notice.error{border-color:var(--danger);border-left-color:var(--danger)}
+.notice.hidden{opacity:0;pointer-events:none;transform:translateY(10px)}
+.hidden{display:none!important}
 </style>
 </head>
-<body><div class="shell">
-<header class="topbar"><div class="brand"><div class="mark">C</div><div><h1>Conduit</h1><p>Provider control center</p></div></div><div id="global-status" class="status">Checking services…</div></header>
-<section class="hero"><div><div class="eyebrow">One gateway · three providers</div><h2>Connect accounts.<br>Conduit handles the wiring.</h2><p>No provider base URLs or internal service passwords are needed. Choose a provider below and follow its short setup flow.</p></div><button class="button secondary" onclick="refreshAll()">Refresh status</button></section>
-<section id="provider-cards" class="overview"></section>
-<div class="workspace">
-<nav class="tabs"><button class="tab active" data-tab="qwen"><b>Qwen</b><small>Browser session</small></button><button class="tab" data-tab="deepseek"><b>DeepSeek</b><small>Website account</small></button><button class="tab" data-tab="gemini"><b>Gemini</b><small>Browser session</small></button><button class="tab" data-tab="logs"><b>Logs</b><small>Live requests</small></button></nav>
-<main>
-<section id="panel-qwen" class="panel active"><article class="card"><header class="section-head"><div><div class="eyebrow">Qwen provider</div><h3>Add a Qwen account</h3><p>Sign in on Qwen, then import the browser session. Your Alibaba password never enters Conduit.</p></div><span class="tag">Session import</span></header><div class="setup"><div class="steps"><span class="step"><strong>1</strong>Open Qwen</span><span class="step"><strong>2</strong>Sign in</span><span class="step"><strong>3</strong>Paste session</span></div><div class="grid2"><div class="field"><label>Account name</label><input id="qwen-label" placeholder="Personal Qwen"></div><div class="field"><label>Browser session</label><textarea id="qwen-session" placeholder="Paste a complete Cookie header, Qwen ticket, or supported bearer session"></textarea><div class="hint">Use a separate browser profile when possible.</div></div></div><div class="actions"><a class="button secondary" href="https://chat.qwen.ai" target="_blank" rel="noopener">Open Qwen ↗</a><button class="button" onclick="addQwen()">Add account</button></div></div><div id="qwen-accounts" class="accounts"></div></article></section>
-<section id="panel-deepseek" class="panel"><article class="card"><header class="section-head"><div><div class="eyebrow">DeepSeek provider</div><h3>Add a DeepSeek account</h3><p>Use the same email or mobile number and password you use at chat.deepseek.com. Conduit now connects to its bundled provider automatically.</p></div><span class="tag">Direct sign-in</span></header><div class="setup"><div class="steps"><span class="step"><strong>1</strong>Choose login</span><span class="step"><strong>2</strong>Enter account</span><span class="step"><strong>3</strong>Save</span></div><div class="grid2"><div class="field"><label>Login type</label><select id="ds-login-type" onchange="toggleDsLogin()"><option value="email">Email address</option><option value="mobile">Mobile number</option></select></div><div class="field"><label>DeepSeek account password</label><input id="ds-password" type="password" autocomplete="current-password" placeholder="Password for chat.deepseek.com"><div class="hint">This is not a Conduit or provider-service password.</div></div><div id="ds-email-wrap" class="field"><label>Email address</label><input id="ds-email" type="email" placeholder="you@example.com"></div><div id="ds-mobile-wrap" class="grid2 hidden"><div class="field"><label>Area code</label><input id="ds-area" placeholder="+86"></div><div class="field"><label>Mobile number</label><input id="ds-mobile" placeholder="Mobile number"></div></div></div><div class="actions"><a class="button secondary" href="https://chat.deepseek.com" target="_blank" rel="noopener">Open DeepSeek ↗</a><button class="button" onclick="addDeepSeek()">Add account</button></div></div><div id="ds-accounts" class="accounts"></div></article></section>
-<section id="panel-gemini" class="panel"><article class="card"><header class="section-head"><div><div class="eyebrow">Gemini provider</div><h3>Add a Gemini account</h3><p>Sign in to Gemini, copy the complete Cookie request header, and paste it once. Conduit extracts the required session values automatically.</p></div><span class="tag">Cookie import</span></header><div class="setup"><div class="steps"><span class="step"><strong>1</strong>Open Gemini</span><span class="step"><strong>2</strong>Copy Cookie header</span><span class="step"><strong>3</strong>Paste once</span></div><div class="grid2"><div class="field"><label>Account name</label><input id="gemini-id" placeholder="Personal Gemini"></div><div class="field"><label>Optional proxy</label><input id="gemini-proxy" placeholder="Leave empty for direct connection"></div></div><div class="field"><label>Gemini Cookie header</label><textarea id="gemini-cookie" placeholder="Paste the complete Cookie header containing __Secure-1PSID and, when available, __Secure-1PSIDTS"></textarea><div class="hint">Developer Tools → Network → a Gemini request → Request Headers → Cookie. Keep this secret.</div></div><div class="actions"><a class="button secondary" href="https://gemini.google.com" target="_blank" rel="noopener">Open Gemini ↗</a><button class="button" onclick="addGemini()">Validate and add</button></div></div><div id="gemini-accounts" class="accounts"></div></article></section>
-<section id="panel-logs" class="panel"><article class="card"><header class="section-head"><div><div class="eyebrow">Telemetry & Traffic</div><h3>Request Logs</h3><p>View real-time API request logs processed by Conduit across all providers.</p></div><button class="button secondary" onclick="clearLogs()">Clear logs</button></header><div id="logs-container" class="accounts" style="max-height:450px;overflow-y:auto;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px"></div></article></section>
-</main></div>
-<section class="api-card"><div class="row"><div><div class="eyebrow">Client setup</div><div class="url"><span id="base-url"></span>/v1</div></div><div id="request-stats" style="color:var(--muted);font-size:12px">No requests yet</div></div></section>
-</div><div id="notice" class="notice hidden"></div>
+<body>
+<div class="shell">
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">9</div>
+      <div>
+        <h1>Conduit Gateway</h1>
+        <p>Powered by 9Router Infrastructure</p>
+      </div>
+    </div>
+    <div id="global-status" class="status-pill">
+      <span class="dot"></span> <span>Checking status…</span>
+    </div>
+  </header>
+
+  <section class="hero">
+    <div>
+      <div class="eyebrow">Universal AI Proxy</div>
+      <h2>Seamless Multi-Provider Routing</h2>
+      <p>Connect your Qwen, DeepSeek, and Gemini accounts. Conduit manages token pooling, auto-retries, and OpenAPI endpoint translation automatically.</p>
+    </div>
+    <button class="btn secondary" onclick="refreshAll()">↺ Refresh All</button>
+  </section>
+
+  <section id="provider-cards" class="overview-grid"></section>
+
+  <nav class="tab-nav">
+    <button class="tab-btn active" data-tab="qwen">Qwen <small>Browser</small></button>
+    <button class="tab-btn" data-tab="deepseek">DeepSeek <small>Direct</small></button>
+    <button class="tab-btn" data-tab="gemini">Gemini <small>Cookie</small></button>
+    <button class="tab-btn" data-tab="logs">Traffic Logs <small>Live</small></button>
+  </nav>
+
+  <main>
+    <section id="panel-qwen" class="panel active">
+      <div class="form-card">
+        <div class="form-head">
+          <h3>Import Qwen Session</h3>
+          <p>Sign in at chat.qwen.ai and paste your browser Cookie header or SSO token. Password is never stored.</p>
+        </div>
+        <div class="grid2">
+          <div class="field">
+            <label>Account Label</label>
+            <input id="qwen-label" placeholder="e.g. Primary Qwen">
+          </div>
+          <div class="field">
+            <label>Browser Session / Cookie</label>
+            <textarea id="qwen-session" placeholder="Paste complete Cookie header or tongyi_sso_ticket..."></textarea>
+            <div class="hint">Use DevTools → Network → copy request Cookie header.</div>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <a class="btn secondary" href="https://chat.qwen.ai" target="_blank" rel="noopener">Open Qwen ↗</a>
+          <button class="btn" onclick="addQwen()">+ Add Account</button>
+        </div>
+      </div>
+      <div id="qwen-accounts" class="account-list"></div>
+    </section>
+
+    <section id="panel-deepseek" class="panel">
+      <div class="form-card">
+        <div class="form-head">
+          <h3>DeepSeek Account Setup</h3>
+          <p>Enter your DeepSeek credentials used on chat.deepseek.com.</p>
+        </div>
+        <div class="grid2">
+          <div class="field">
+            <label>Login Type</label>
+            <select id="ds-login-type" onchange="toggleDsLogin()">
+              <option value="email">Email Address</option>
+              <option value="mobile">Mobile Number</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>DeepSeek Password</label>
+            <input id="ds-password" type="password" placeholder="Password for chat.deepseek.com">
+          </div>
+          <div id="ds-email-wrap" class="field">
+            <label>Email Address</label>
+            <input id="ds-email" type="email" placeholder="user@example.com">
+          </div>
+          <div id="ds-mobile-wrap" class="grid2 hidden">
+            <div class="field">
+              <label>Area Code</label>
+              <input id="ds-area" placeholder="+86">
+            </div>
+            <div class="field">
+              <label>Mobile Number</label>
+              <input id="ds-mobile" placeholder="13800000000">
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <a class="btn secondary" href="https://chat.deepseek.com" target="_blank" rel="noopener">Open DeepSeek ↗</a>
+          <button class="btn" onclick="addDeepSeek()">+ Add Account</button>
+        </div>
+      </div>
+      <div id="ds-accounts" class="account-list"></div>
+    </section>
+
+    <section id="panel-gemini" class="panel">
+      <div class="form-card">
+        <div class="form-head">
+          <h3>Gemini Cookie Session</h3>
+          <p>Paste the Cookie header from your signed-in gemini.google.com session.</p>
+        </div>
+        <div class="grid2">
+          <div class="field">
+            <label>Account Identifier</label>
+            <input id="gemini-id" placeholder="e.g. Work Gemini">
+          </div>
+          <div class="field">
+            <label>Proxy URL (Optional)</label>
+            <input id="gemini-proxy" placeholder="socks5://... or http://...">
+          </div>
+        </div>
+        <div class="field">
+          <label>Cookie Header Content</label>
+          <textarea id="gemini-cookie" placeholder="Paste full Cookie string containing __Secure-1PSID..."></textarea>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <a class="btn secondary" href="https://gemini.google.com" target="_blank" rel="noopener">Open Gemini ↗</a>
+          <button class="btn" onclick="addGemini()">+ Add Session</button>
+        </div>
+      </div>
+      <div id="gemini-accounts" class="account-list"></div>
+    </section>
+
+    <section id="panel-logs" class="panel">
+      <div class="form-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <div>
+            <h3 style="margin:0;font-size:16px">Live Traffic & Telemetry</h3>
+            <p style="margin:4px 0 0;color:var(--text-muted);font-size:12px">Real-time HTTP requests routed through Conduit</p>
+          </div>
+          <button class="btn danger" onclick="clearLogs()">Clear Logs</button>
+        </div>
+        <div style="max-height:400px;overflow-y:auto;border:1px solid var(--line);border-radius:8px;background:var(--bg)">
+          <table class="logs-table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Method</th>
+                <th>Endpoint</th>
+                <th>Status</th>
+                <th style="text-align:right">Latency</th>
+              </tr>
+            </thead>
+            <tbody id="logs-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer-bar">
+    <div>
+      <div style="color:var(--brand);font-weight:700;font-size:11px;text-transform:uppercase">OpenAI Base URL</div>
+      <div style="font-family:ui-monospace,monospace;font-size:13px;color:var(--text)"><span id="base-url"></span>/v1</div>
+    </div>
+    <div id="request-stats" style="color:var(--text-muted);font-size:12px">Calculating stats…</div>
+  </footer>
+</div>
+
+<div id="notice" class="notice hidden"></div>
+
 <script>
 const $=id=>document.getElementById(id),esc=v=>String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
-document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tab,.panel').forEach(x=>x.classList.remove('active'));b.classList.add('active');$('panel-'+b.dataset.tab).classList.add('active')});
-function notify(m,e=false){const n=$('notice');n.textContent=m;n.className='notice'+(e?' error':'');clearTimeout(window.noticeTimer);window.noticeTimer=setTimeout(()=>n.classList.add('hidden'),5000)}
-async function api(url,opt={}){const r=await fetch(url,opt),d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(typeof d.error==='string'?d.error:d.error?.message||d.message||`HTTP ${r.status}`);return d}
-function badge(ok,label){return `<span class="badge" style="${ok?'':'color:var(--warn);background:#ffc86112'}">${esc(label)}</span>`}
-function empty(text){return `<div class="empty">${esc(text)}</div>`}
-async function loadProviders(){try{const d=await api('/admin/api/providers');$('provider-cards').innerHTML=d.data.map(p=>{const good=p.healthy===true, setup=p.setup==='needs_account'?'Needs an account':good?'Ready':'Service unavailable', detail=p.error?`<div class="account-meta">${esc(p.error)}</div>`:'';return `<div class="provider-mini"><div class="mini-top"><h3>${esc(p.name||p.id)}</h3><span class="dot ${good?'ok':p.setup==='needs_account'?'':'bad'}"></span></div><p>${esc(setup)} · ${p.accounts??0} configured</p>${detail}</div>`}).join('');const good=d.data.filter(p=>p.healthy).length;$('global-status').textContent=`${good}/${d.data.length} services online`}catch(e){notify(e.message,true)}}
-async function loadStats(){try{const d=await api('/admin/api/stats');$('base-url').textContent=location.origin;$('request-stats').textContent=`${d.stats.totalRequests} requests · ${d.stats.avgLatency} ms average`;renderQwen(d.accounts);renderLogs(d.logs)}catch(e){notify(e.message,true)}}
-function renderLogs(logs){const el=$('logs-container');if(!logs||!logs.length){el.innerHTML=empty('No request logs recorded yet.');return}el.innerHTML=logs.map(log=>{const date=new Date(log.timestamp).toLocaleTimeString();const statusClass=log.status>=400?'color:var(--danger)':'color:var(--accent)';return `<div class="account" style="padding:10px 14px"><div style="display:flex;gap:12px;width:100%"><span style="color:var(--muted);min-width:70px">${date}</span><span style="font-weight:bold;color:var(--blue);min-width:50px">${esc(log.method)}</span><span style="flex-grow:1;word-break:break-all">${esc(log.url)}</span><span style="${statusClass};font-weight:bold;min-width:40px;text-align:right">${log.status}</span><span style="color:var(--muted);min-width:60px;text-align:right">${log.latency}ms</span></div></div>`}).join('')}
-async function clearLogs(){if(confirm('Clear all request logs?')){try{await api('/admin/api/logs',{method:'DELETE'});refreshAll()}catch(e){notify(e.message,true)}}}
-function renderQwen(a){$('qwen-accounts').innerHTML=a.length?a.map(x=>`<div class="account"><div><div class="account-name">${esc(x.label)}</div><div class="account-meta">${esc(x.credentialKind)} · ${esc(x.credential)}</div></div><div class="actions">${badge(x.ok,x.ok?'Ready':'Cooling down')}${x.source==='dashboard'?`<button class="remove" onclick="removeQwen('${esc(x.id)}')">Remove</button>`:''}</div></div>`).join(''):empty('No Qwen accounts yet.')}
-async function loadDeepSeek(){try{const d=await api('/admin/api/providers/deepseek/accounts');$('ds-accounts').innerHTML=d.accounts.length?d.accounts.map(a=>`<div class="account"><div><div class="account-name">${esc(a.identity)}</div><div class="account-meta">${esc(a.state)} · ${a.errorCount} errors</div></div><div class="actions">${badge(a.state!=='error',a.state)}<button class="remove" onclick="removeDeepSeek(${a.index})">Remove</button></div></div>`).join(''):empty('No DeepSeek accounts yet. Add the account you use on the DeepSeek website.')}catch(e){$('ds-accounts').innerHTML=empty(e.message)}}
-async function loadGemini(){try{const d=await api('/admin/api/providers/gemini/accounts');$('gemini-accounts').innerHTML=d.accounts.length?d.accounts.map(a=>`<div class="account"><div><div class="account-name">${esc(a.id)}</div><div class="account-meta">${a.proxy?'Proxy configured':'Direct connection'}</div></div><div class="actions">${badge(a.healthy,a.healthy?'Ready':'Session unavailable')}<button class="remove" onclick="removeGemini('${esc(a.id)}')">Remove</button></div></div>`).join(''):empty('No Gemini accounts yet. Paste a browser Cookie header above.')}catch(e){$('gemini-accounts').innerHTML=empty(e.message)}}
-async function refreshAll(){await Promise.allSettled([loadProviders(),loadStats(),loadDeepSeek(),loadGemini()])}
-function toggleDsLogin(){const mobile=$('ds-login-type').value==='mobile';$('ds-email-wrap').classList.toggle('hidden',mobile);$('ds-mobile-wrap').classList.toggle('hidden',!mobile)}
-async function addQwen(){try{await api('/admin/api/providers/qwen/accounts',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({label:$('qwen-label').value,session:$('qwen-session').value})});$('qwen-session').value='';notify('Qwen account added.');refreshAll()}catch(e){notify(e.message,true)}}
-async function addDeepSeek(){try{const mobile=$('ds-login-type').value==='mobile';await api('/admin/api/providers/deepseek/accounts',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email:mobile?'':$('ds-email').value,mobile:mobile?$('ds-mobile').value:'',areaCode:mobile?$('ds-area').value:'',password:$('ds-password').value})});$('ds-password').value='';notify('DeepSeek account added.');refreshAll()}catch(e){notify(e.message,true)}}
-async function addGemini(){try{await api('/admin/api/providers/gemini/accounts',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:$('gemini-id').value,cookie:$('gemini-cookie').value,proxy:$('gemini-proxy').value})});$('gemini-cookie').value='';notify('Gemini session validated and added.');refreshAll()}catch(e){notify(e.message,true)}}
-async function removeQwen(id){if(confirm('Remove this Qwen account?')){try{await api('/admin/api/providers/qwen/accounts/'+encodeURIComponent(id),{method:'DELETE'});refreshAll()}catch(e){notify(e.message,true)}}}
-async function removeDeepSeek(i){if(confirm('Remove this DeepSeek account?')){try{await api('/admin/api/providers/deepseek/accounts/'+i,{method:'DELETE'});refreshAll()}catch(e){notify(e.message,true)}}}
-async function removeGemini(id){if(confirm('Remove this Gemini account?')){try{await api('/admin/api/providers/gemini/accounts/'+encodeURIComponent(id),{method:'DELETE'});refreshAll()}catch(e){notify(e.message,true)}}}
-refreshAll();setInterval(loadProviders,12000);
-</script></body></html>
+
+document.querySelectorAll('.tab-btn').forEach(b=>{
+  b.onclick=()=>{
+    document.querySelectorAll('.tab-btn,.panel').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+    $('panel-'+b.dataset.tab).classList.add('active');
+  }
+});
+
+function notify(m,e=false){
+  const n=$('notice');
+  n.textContent=m;
+  n.className='notice'+(e?' error':'');
+  clearTimeout(window.noticeTimer);
+  window.noticeTimer=setTimeout(()=>n.classList.add('hidden'),5000);
+}
+
+async function api(url,opt={}){
+  const r=await fetch(url,opt),d=await r.json().catch(()=>({}));
+  if(!r.ok)throw new Error(typeof d.error==='string'?d.error:d.error?.message||d.message||`HTTP ${r.status}`);
+  return d;
+}
+
+function badge(ok,label){
+  return `<span class="badge ${ok?'ok':'bad'}">${esc(label)}</span>`;
+}
+
+function empty(text){
+  return `<div style="text-align:center;padding:24px;color:var(--text-subtle);background:var(--bg-alt);border:1px solid var(--line);border-radius:8px">${esc(text)}</div>`;
+}
+
+async function loadProviders(){
+  try{
+    const d=await api('/admin/api/providers');
+    $('provider-cards').innerHTML=d.data.map(p=>{
+      const good=p.healthy===true;
+      const setup=p.setup==='needs_account'?'Needs Account':good?'Online':'Unavailable';
+      const detail=p.error?`<div class="card-err">${esc(p.error)}</div>`:'';
+      return `<div class="provider-card">
+        <div class="card-head">
+          <h3>${esc(p.name||p.id)}</h3>
+          <span class="badge ${good?'ok':p.setup==='needs_account'?'warn':'bad'}">${esc(setup)}</span>
+        </div>
+        <div class="card-meta">${p.accounts??0} Accounts Configured · ${esc(p.mode||'Managed')}</div>
+        ${detail}
+      </div>`;
+    }).join('');
+    const goodCount=d.data.filter(p=>p.healthy).length;
+    $('global-status').innerHTML=`<span class="dot ${goodCount>0?'ok':'bad'}"></span> <span>${goodCount}/${d.data.length} Providers Active</span>`;
+  }catch(e){
+    notify(e.message,true);
+  }
+}
+
+async function loadStats(){
+  try{
+    const d=await api('/admin/api/stats');
+    $('base-url').textContent=location.origin;
+    $('request-stats').textContent=`${d.stats.totalRequests} total requests · ${d.stats.avgLatency}ms avg latency`;
+    renderQwen(d.accounts);
+    renderLogs(d.logs);
+  }catch(e){
+    notify(e.message,true);
+  }
+}
+
+function renderQwen(a){
+  $('qwen-accounts').innerHTML=a.length?a.map(x=>`
+    <div class="account-item">
+      <div class="acc-info">
+        <h4>${esc(x.label)}</h4>
+        <p>${esc(x.credentialKind)} · ${esc(x.credential)}</p>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px">
+        ${badge(x.ok,x.ok?'Active':'Cooling Down')}
+        ${x.source==='dashboard'?`<button class="btn danger" style="padding:4px 8px;font-size:11px" onclick="removeQwen('${esc(x.id)}')">Delete</button>`:''}
+      </div>
+    </div>
+  `).join(''):empty('No Qwen accounts configured yet.');
+}
+
+async function loadDeepSeek(){
+  try{
+    const d=await api('/admin/api/providers/deepseek/accounts');
+    $('ds-accounts').innerHTML=d.accounts.length?d.accounts.map(a=>`
+      <div class="account-item">
+        <div class="acc-info">
+          <h4>${esc(a.identity)}</h4>
+          <p>State: ${esc(a.state)} · Error count: ${a.errorCount}</p>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px">
+          ${badge(a.state!=='error',a.state)}
+          <button class="btn danger" style="padding:4px 8px;font-size:11px" onclick="removeDeepSeek(${a.index})">Delete</button>
+        </div>
+      </div>
+    `).join(''):empty('No DeepSeek accounts configured.');
+  }catch(e){
+    $('ds-accounts').innerHTML=empty(e.message);
+  }
+}
+
+async function loadGemini(){
+  try{
+    const d=await api('/admin/api/providers/gemini/accounts');
+    $('gemini-accounts').innerHTML=d.accounts.length?d.accounts.map(a=>`
+      <div class="account-item">
+        <div class="acc-info">
+          <h4>${esc(a.id)}</h4>
+          <p>${a.proxy?'Proxy: '+esc(a.proxy):'Direct Connection'}</p>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px">
+          ${badge(a.healthy,a.healthy?'Active':'Session Invalid')}
+          <button class="btn danger" style="padding:4px 8px;font-size:11px" onclick="removeGemini('${esc(a.id)}')">Delete</button>
+        </div>
+      </div>
+    `).join(''):empty('No Gemini accounts configured.');
+  }catch(e){
+    $('gemini-accounts').innerHTML=empty(e.message);
+  }
+}
+
+function renderLogs(logs){
+  const tbody=$('logs-tbody');
+  if(!logs||!logs.length){
+    tbody.innerHTML='<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--text-subtle)">No telemetry logs recorded yet</td></tr>';
+    return;
+  }
+  tbody.innerHTML=logs.map(log=>{
+    const date=new Date(log.timestamp).toLocaleTimeString();
+    const statusColor=log.status>=400?'var(--danger)':'var(--success)';
+    return `<tr>
+      <td>${date}</td>
+      <td style="font-weight:700;color:var(--brand)">${esc(log.method)}</td>
+      <td style="word-break:break-all">${esc(log.url)}</td>
+      <td style="font-weight:700;color:${statusColor}">${log.status}</td>
+      <td style="text-align:right">${log.latency}ms</td>
+    </tr>`;
+  }).join('');
+}
+
+async function refreshAll(){
+  await Promise.allSettled([loadProviders(),loadStats(),loadDeepSeek(),loadGemini()]);
+}
+
+function toggleDsLogin(){
+  const isMobile=$('ds-login-type').value==='mobile';
+  $('ds-email-wrap').classList.toggle('hidden',isMobile);
+  $('ds-mobile-wrap').classList.toggle('hidden',!isMobile);
+}
+
+async function addQwen(){
+  try{
+    await api('/admin/api/providers/qwen/accounts',{
+      method:'POST',
+      headers:{'content-type':'application/json'},
+      body:JSON.stringify({label:$('qwen-label').value,session:$('qwen-session').value})
+    });
+    $('qwen-session').value='';
+    notify('Qwen account added successfully.');
+    refreshAll();
+  }catch(e){
+    notify(e.message,true);
+  }
+}
+
+async function addDeepSeek(){
+  try{
+    const isMobile=$('ds-login-type').value==='mobile';
+    await api('/admin/api/providers/deepseek/accounts',{
+      method:'POST',
+      headers:{'content-type':'application/json'},
+      body:JSON.stringify({
+        email:isMobile?'':$('ds-email').value,
+        mobile:isMobile?$('ds-mobile').value:'',
+        areaCode:isMobile?$('ds-area').value:'',
+        password:$('ds-password').value
+      })
+    });
+    $('ds-password').value='';
+    notify('DeepSeek account added.');
+    refreshAll();
+  }catch(e){
+    notify(e.message,true);
+  }
+}
+
+async function addGemini(){
+  try{
+    await api('/admin/api/providers/gemini/accounts',{
+      method:'POST',
+      headers:{'content-type':'application/json'},
+      body:JSON.stringify({
+        id:$('gemini-id').value,
+        cookie:$('gemini-cookie').value,
+        proxy:$('gemini-proxy').value
+      })
+    });
+    $('gemini-cookie').value='';
+    notify('Gemini session added.');
+    refreshAll();
+  }catch(e){
+    notify(e.message,true);
+  }
+}
+
+async function removeQwen(id){
+  if(confirm('Delete Qwen account?')){
+    try{
+      await api('/admin/api/providers/qwen/accounts/'+encodeURIComponent(id),{method:'DELETE'});
+      refreshAll();
+    }catch(e){
+      notify(e.message,true);
+    }
+  }
+}
+
+async function removeDeepSeek(i){
+  if(confirm('Delete DeepSeek account?')){
+    try{
+      await api('/admin/api/providers/deepseek/accounts/'+i,{method:'DELETE'});
+      refreshAll();
+    }catch(e){
+      notify(e.message,true);
+    }
+  }
+}
+
+async function removeGemini(id){
+  if(confirm('Delete Gemini account?')){
+    try{
+      await api('/admin/api/providers/gemini/accounts/'+encodeURIComponent(id),{method:'DELETE'});
+      refreshAll();
+    }catch(e){
+      notify(e.message,true);
+    }
+  }
+}
+
+async function clearLogs(){
+  if(confirm('Clear all traffic logs?')){
+    try{
+      await api('/admin/api/logs',{method:'DELETE'});
+      refreshAll();
+    }catch(e){
+      notify(e.message,true);
+    }
+  }
+}
+
+refreshAll();
+setInterval(loadProviders,10000);
+</script>
+</body>
+</html>

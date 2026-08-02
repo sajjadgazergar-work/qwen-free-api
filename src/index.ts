@@ -6,6 +6,8 @@ import axios from 'axios';
 import mime = require('mime-types');
 import { v4 as uuidv4 } from 'uuid';
 import dotenv = require('dotenv');
+import path = require('path');
+import fs = require('fs');
 
 dotenv.config();
 
@@ -21,6 +23,80 @@ const QWEN_GUEST_REFERER = `${QWEN_BASE_URL}/c/guest`;
 const QWEN_WEB_REFERER = `${QWEN_BASE_URL}/`;
 const WEB_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
 const WEB_ACCEPT_LANGUAGE = 'zh-CN,zh;q=0.9,en;q=0.8';
+
+// ============================================
+// Metrics & State Management
+// ============================================
+
+interface Account {
+  value: string;
+  ok: boolean;
+  lastUsed?: number;
+}
+
+interface RequestLog {
+  timestamp: number;
+  method: string;
+  url: string;
+  status: number;
+  latency: number;
+}
+
+let accountPool: Account[] = [];
+let totalRequests = 0;
+let successRequests = 0;
+let failedRequests = 0;
+let avgLatency = 0;
+let latencySum = 0;
+let latencyCount = 0;
+const startTime = Date.now();
+const requestLogs: RequestLog[] = [];
+
+// Initialize accounts from environment variables
+const initialTokens = process.env.API_TOKENS || process.env.QWEN_TOKENS || '';
+if (initialTokens) {
+  initialTokens.split(',').map(s => s.trim()).filter(Boolean).forEach(token => {
+    accountPool.push({ value: token, ok: true });
+  });
+}
+
+// Request logging & metrics middleware
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const latency = Date.now() - start;
+    const status = res.statusCode;
+
+    // Ignore dashboard polling in logs
+    if (req.url.startsWith('/admin/api/')) {
+      return;
+    }
+
+    totalRequests++;
+    if (status >= 400) {
+      failedRequests++;
+    } else {
+      successRequests++;
+    }
+
+    latencySum += latency;
+    latencyCount++;
+    avgLatency = Math.round(latencySum / latencyCount);
+
+    requestLogs.unshift({
+      timestamp: Date.now(),
+      method: req.method,
+      url: req.url,
+      status,
+      latency,
+    });
+
+    if (requestLogs.length > 100) {
+      requestLogs.pop();
+    }
+  });
+  next();
+});
 
 // ============================================
 // Baxia / SEC Anti-bot Heuristic Spoofing
@@ -86,39 +162,41 @@ async function getBaxiaTokens() {
 
 // Cookie Helper
 function generateCookie(ticket: string): string {
-  // If the user provided ticket is a full cookie header already, return it
   if (ticket.includes('=') && ticket.includes(';')) {
     return ticket;
   }
-  // Otherwise build cookie
   if (ticket.startsWith('login_aliyunid_ticket=') || ticket.startsWith('tongyi_sso_ticket=')) {
     return ticket;
   }
   return `login_aliyunid_ticket=${ticket}; tongyi_sso_ticket=${ticket}`;
 }
 
-// Token Rotation & Pool (Matches ds-free-api configuration pattern)
-function getBearerTickets(authHeader?: string): string[] {
+// Ticket selector utilizing the dynamic account pool & Bearer headers
+function selectAccountTicket(authHeader?: string): { ticket: string; accountRef?: Account } {
+  // 1. Check if auth header passes a custom/live ticket directly
   if (authHeader && authHeader.startsWith('Bearer ')) {
     const raw = authHeader.substring(7).trim();
-    if (raw && !raw.includes('__REPLACE_ME__')) {
-      return raw.split(',').map(s => s.trim()).filter(Boolean);
+    if (raw && !raw.includes('__REPLACE_ME__') && (raw.length > 40 || raw.includes('='))) {
+      // Direct pass-through
+      return { ticket: raw };
     }
   }
-  
-  // Fallback to environment variables
-  const envTokens = process.env.API_TOKENS || process.env.QWEN_TOKENS || '';
-  if (envTokens) {
-    return envTokens.split(',').map(s => s.trim()).filter(Boolean);
-  }
-  return [];
-}
 
-function pickRandomTicket(tickets: string[]): string {
-  if (tickets.length === 0) {
-    throw new Error('No Qwen account tokens (tongyi_sso_ticket or login_aliyunid_ticket) configured or provided in Authorization header.');
+  // 2. Otherwise rotate inside our memory account pool
+  const healthyAccounts = accountPool.filter(acc => acc.ok);
+  if (healthyAccounts.length === 0) {
+    // If pool is empty but we have disabled accounts, try them. Else crash.
+    if (accountPool.length > 0) {
+      const selected = accountPool[Math.floor(Math.random() * accountPool.length)];
+      selected.lastUsed = Date.now();
+      return { ticket: selected.value, accountRef: selected };
+    }
+    throw new Error('No Qwen account tokens (tongyi_sso_ticket or login_aliyunid_ticket) configured in pool. Add accounts via the dashboard or provide one in your Authorization Bearer header.');
   }
-  return tickets[Math.floor(Math.random() * tickets.length)];
+
+  const selected = healthyAccounts[Math.floor(Math.random() * healthyAccounts.length)];
+  selected.lastUsed = Date.now();
+  return { ticket: selected.value, accountRef: selected };
 }
 
 // ============================================
@@ -639,11 +717,96 @@ function parseQwenSsePayload(rawPayload: string) {
 }
 
 // ============================================
-// API Handlers
+// Dashboard Admin APIs
+// ============================================
+
+// Serve static admin index
+app.get('/admin', (req: Request, res: Response) => {
+  const adminHtmlPath = path.join(__dirname, '../public/admin.html');
+  if (fs.existsSync(adminHtmlPath)) {
+    res.sendFile(adminHtmlPath);
+  } else {
+    res.sendFile(path.join(__dirname, 'public/admin.html'));
+  }
+});
+
+// Redirect root to admin if visited via standard browser HTML request
+app.get('/', (req: Request, res: Response) => {
+  const acceptHeader = req.headers.accept || '';
+  if (acceptHeader.includes('text/html')) {
+    return res.redirect('/admin');
+  }
+  res.send('Qwen-Free-API is up and running. Use POST /v1/chat/completions to call Qwen models, or visit /admin in browser.');
+});
+
+// Fetch metrics & stats
+app.get('/admin/api/stats', (req: Request, res: Response) => {
+  const totalMem = Math.round(process.memoryUsage().rss / 1024 / 1024);
+  res.json({
+    stats: {
+      totalRequests,
+      successRequests,
+      failedRequests,
+      avgLatency,
+    },
+    accounts: accountPool,
+    sys: {
+      node: process.version,
+      uptime: Math.floor((Date.now() - startTime) / 1000),
+      memory: `${totalMem} MB`,
+    },
+    config: {
+      enableSearch: process.env.ENABLE_SEARCH === 'true',
+      port: PORT,
+      nodeEnv: process.env.NODE_ENV || 'development',
+    },
+    logs: requestLogs,
+  });
+});
+
+// Dynamic Account Insertion
+app.post('/admin/api/accounts', (req: Request, res: Response) => {
+  try {
+    const { tokens } = req.body;
+    if (!tokens) {
+      return res.status(400).json({ success: false, error: 'tokens are required' });
+    }
+    const list = String(tokens).split(',').map(s => s.trim()).filter(Boolean);
+    list.forEach(t => {
+      accountPool.push({ value: t, ok: true });
+    });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Remove Account
+app.delete('/admin/api/accounts', (req: Request, res: Response) => {
+  try {
+    const index = Number(req.query.index);
+    if (Number.isNaN(index) || index < 0 || index >= accountPool.length) {
+      return res.status(400).json({ success: false, error: 'Invalid account index' });
+    }
+    accountPool.splice(index, 1);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Clear Request Logs
+app.delete('/admin/api/logs', (req: Request, res: Response) => {
+  requestLogs.length = 0;
+  res.json({ success: true });
+});
+
+// ============================================
+// Original OpenAI Compatibility Routes
 // ============================================
 
 // Model List endpoint
-app.get('/v1/models', async (req: Request, res: Response) => {
+app.get('/v1/models', (req: Request, res: Response) => {
   res.json({
     object: 'list',
     data: [
@@ -657,10 +820,12 @@ app.get('/v1/models', async (req: Request, res: Response) => {
 
 // Image Generations endpoint
 app.post('/v1/images/generations', async (req: Request, res: Response) => {
+  let accountRef: Account | undefined;
   try {
     const authHeader = req.headers.authorization;
-    const tickets = getBearerTickets(authHeader);
-    const ticket = pickRandomTicket(tickets);
+    const selection = selectAccountTicket(authHeader);
+    const ticket = selection.ticket;
+    accountRef = selection.accountRef;
     
     const { prompt, model, n = 1, size, response_format = 'url' } = req.body;
     if (!prompt) {
@@ -671,7 +836,6 @@ app.post('/v1/images/generations', async (req: Request, res: Response) => {
     const qwenRatio = mapOpenAiImageSizeToQwenRatio(size);
     const baxia = await getBaxiaTokens();
 
-    // Create session for text-to-image
     const createResp = await axios.post(`${QWEN_BASE_URL}/api/v2/chats/new`, {
       title: '新建对话',
       models: [actualModel],
@@ -695,11 +859,11 @@ app.post('/v1/images/generations', async (req: Request, res: Response) => {
     });
 
     if (!createResp.data?.success || !createResp.data?.data?.id) {
+      if (accountRef) accountRef.ok = false;
       return res.status(500).json({ error: { message: createResp.data?.data?.message || 'Failed to create image generation session', type: 'api_error' } });
     }
     const chatId = createResp.data.data.id;
 
-    // Request image generation
     const finalPrompt = n === 1 ? prompt : `${prompt}\n\n(Generate ${n} images.)`;
     const imageResp = await axios.post(`${QWEN_BASE_URL}/api/v2/chat/completions?chat_id=${chatId}`, {
       stream: true,
@@ -767,7 +931,6 @@ app.post('/v1/images/generations', async (req: Request, res: Response) => {
       });
     }
 
-    // Base64 format requested
     const b64DataList = await Promise.all(urls.slice(0, n).map(async (u) => {
       const imageBytes = await axios.get(u, { responseType: 'arraybuffer' });
       return { b64_json: Buffer.from(imageBytes.data).toString('base64') };
@@ -775,16 +938,19 @@ app.post('/v1/images/generations', async (req: Request, res: Response) => {
 
     return res.json({ created, data: b64DataList });
   } catch (err: any) {
+    if (accountRef) accountRef.ok = false;
     res.status(500).json({ error: { message: err.message, type: 'api_error' } });
   }
 });
 
 // Chat Completions endpoint
 app.post('/v1/chat/completions', async (req: Request, res: Response) => {
+  let accountRef: Account | undefined;
   try {
     const authHeader = req.headers.authorization;
-    const tickets = getBearerTickets(authHeader);
-    const ticket = pickRandomTicket(tickets);
+    const selection = selectAccountTicket(authHeader);
+    const ticket = selection.ticket;
+    accountRef = selection.accountRef;
     
     const { model, messages, stream = false } = req.body;
     if (!messages || messages.length === 0) {
@@ -796,7 +962,6 @@ app.post('/v1/chat/completions', async (req: Request, res: Response) => {
     const enableSearch = process.env.ENABLE_SEARCH === 'true';
     const chatType = enableSearch ? 'search' : 't2t';
 
-    // 1. Create chat session
     const createResp = await axios.post(`${QWEN_BASE_URL}/api/v2/chats/new`, {
       title: '新建对话',
       models: [actualModel],
@@ -820,17 +985,16 @@ app.post('/v1/chat/completions', async (req: Request, res: Response) => {
     });
 
     if (!createResp.data?.success || !createResp.data?.data?.id) {
+      if (accountRef) accountRef.ok = false;
       return res.status(500).json({ error: { message: createResp.data?.data?.message || 'Failed to create chat session', type: 'api_error' } });
     }
     const chatId = createResp.data.data.id;
 
-    // 2. Parse attachments & upload
     const parsed = parseIncomingMessages(messages);
     const uploadedFiles = parsed.attachments.length > 0 
       ? await uploadAttachments(parsed.attachments, ticket, baxia)
       : [];
 
-    // 3. Post prompt completions
     const qwenResp = await axios.post(`${QWEN_BASE_URL}/api/v2/chat/completions?chat_id=${chatId}`, {
       stream: true,
       version: '2.1',
@@ -884,7 +1048,6 @@ app.post('/v1/chat/completions', async (req: Request, res: Response) => {
     const createdTime = Math.floor(Date.now() / 1000);
     const sseParsed = parseQwenSsePayload(qwenResp.data);
 
-    // If client requested non-stream:
     if (!stream) {
       const prompt_tokens = Math.ceil(parsed.content.length / 4);
       const completion_tokens = Math.ceil(sseParsed.content.length / 4);
@@ -910,7 +1073,6 @@ app.post('/v1/chat/completions', async (req: Request, res: Response) => {
       });
     }
 
-    // Stream requested
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
@@ -933,13 +1095,9 @@ app.post('/v1/chat/completions', async (req: Request, res: Response) => {
     res.end();
 
   } catch (err: any) {
+    if (accountRef) accountRef.ok = false;
     res.status(500).json({ error: { message: err.message, type: 'api_error' } });
   }
-});
-
-// Root endpoint for status / test
-app.get('/', (req: Request, res: Response) => {
-  res.send('Qwen-Free-API is up and running. Use POST /v1/chat/completions to call Qwen models.');
 });
 
 app.listen(PORT, () => {

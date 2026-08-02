@@ -1,0 +1,24 @@
+services:
+  conduit:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      DEEPSEEK_BASE_URL: http://deepseek:22217
+    depends_on:
+      - deepseek
+    restart: unless-stopped
+
+  deepseek:
+    image: ghcr.io/niyueee/ds-free-api:latest
+    volumes:
+      - ./data/deepseek:/app/data
+      - ./config/deepseek.toml:/app/config/config.toml
+    environment:
+      DS_DATA_DIR: /app/data
+      RUST_LOG: info
+    expose:
+      - "22217"
+    restart: unless-stopped

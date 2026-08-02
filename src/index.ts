@@ -17,6 +17,11 @@ import {
   shouldRequireTool,
   validateConversation,
 } from './tool-calling';
+import {
+  deepSeekModels,
+  getDeepSeekStatus,
+  proxyDeepSeekChat,
+} from './providers/deepseek';
 
 dotenv.config();
 
@@ -41,6 +46,8 @@ interface Account {
   value: string;
   ok: boolean;
   lastUsed?: number;
+  failures: number;
+  cooldownUntil?: number;
 }
 
 interface RequestLog {
@@ -65,7 +72,7 @@ const requestLogs: RequestLog[] = [];
 const initialTokens = process.env.API_TOKENS || process.env.QWEN_TOKENS || '';
 if (initialTokens) {
   initialTokens.split(',').map(s => s.trim()).filter(Boolean).forEach(token => {
-    accountPool.push({ value: token, ok: true });
+    accountPool.push({ value: token, ok: true, failures: 0 });
   });
 }
 
@@ -235,30 +242,53 @@ function decompressResponseBody(data: any): string {
 
 // Ticket selector utilizing the dynamic account pool & Bearer headers
 function selectAccountTicket(authHeader?: string): { ticket: string; accountRef?: Account } {
-  // 1. Check if auth header passes a custom/live ticket directly
+  // A long bearer value is treated as an explicit Qwen credential. Short bearer
+  // values remain available for a future Conduit API-key layer.
   if (authHeader && authHeader.startsWith('Bearer ')) {
     const raw = authHeader.substring(7).trim();
     if (raw && !raw.includes('__REPLACE_ME__') && (raw.length > 40 || raw.includes('=') || raw.startsWith('ey'))) {
-      // Direct pass-through
       return { ticket: raw };
     }
   }
 
-  // 2. Otherwise rotate inside our memory account pool
-  const healthyAccounts = accountPool.filter(acc => acc.ok);
-  if (healthyAccounts.length === 0) {
-    // If pool is empty but we have disabled accounts, try them. Else crash.
-    if (accountPool.length > 0) {
-      const selected = accountPool[Math.floor(Math.random() * accountPool.length)];
-      selected.lastUsed = Date.now();
-      return { ticket: selected.value, accountRef: selected };
+  const now = Date.now();
+  for (const account of accountPool) {
+    if (!account.ok && account.cooldownUntil && account.cooldownUntil <= now) {
+      account.ok = true;
+      account.cooldownUntil = undefined;
     }
-    throw new Error('No Qwen account tokens (tongyi_sso_ticket or login_aliyunid_ticket) configured in pool. Add accounts via the dashboard or provide one in your Authorization Bearer header.');
+  }
+  const available = accountPool
+    .filter(account => account.ok && (!account.cooldownUntil || account.cooldownUntil <= now))
+    .sort((a, b) => (a.lastUsed || 0) - (b.lastUsed || 0));
+  if (available.length === 0) {
+    const retryAt = accountPool.reduce<number | undefined>((earliest, account) => {
+      if (!account.cooldownUntil) return earliest;
+      return earliest === undefined ? account.cooldownUntil : Math.min(earliest, account.cooldownUntil);
+    }, undefined);
+    const detail = retryAt ? ` Earliest retry: ${new Date(retryAt).toISOString()}.` : '';
+    throw new Error(`No healthy Qwen credentials are available.${detail}`);
   }
 
-  const selected = healthyAccounts[Math.floor(Math.random() * healthyAccounts.length)];
-  selected.lastUsed = Date.now();
+  const selected = available[0];
+  selected.lastUsed = now;
   return { ticket: selected.value, accountRef: selected };
+}
+
+function markAccountSuccess(account?: Account) {
+  if (!account) return;
+  account.ok = true;
+  account.failures = 0;
+  account.cooldownUntil = undefined;
+}
+
+function markAccountFailure(account?: Account) {
+  if (!account) return;
+  account.failures += 1;
+  const base = Number(process.env.QWEN_ACCOUNT_COOLDOWN_MS) || 30_000;
+  const delay = Math.min(base * (2 ** Math.max(0, account.failures - 1)), 15 * 60_000);
+  account.ok = false;
+  account.cooldownUntil = Date.now() + delay;
 }
 
 // ============================================
@@ -758,6 +788,16 @@ app.get('/', (req: Request, res: Response) => {
 });
 
 // Fetch metrics & stats
+app.get('/admin/api/providers', async (_req: Request, res: Response) => {
+  res.json({
+    object: 'list',
+    data: [
+      { id: 'qwen', enabled: accountPool.length > 0, healthy: accountPool.some(a => a.ok), accounts: accountPool.length },
+      await getDeepSeekStatus(),
+    ],
+  });
+});
+
 app.get('/admin/api/stats', (req: Request, res: Response) => {
   const totalMem = Math.round(process.memoryUsage().rss / 1024 / 1024);
   res.json({
@@ -767,7 +807,10 @@ app.get('/admin/api/stats', (req: Request, res: Response) => {
       failedRequests,
       avgLatency,
     },
-    accounts: accountPool,
+    accounts: accountPool.map(({ value, ...account }) => ({
+      ...account,
+      credential: value.length <= 8 ? '***' : `${value.slice(0, 4)}…${value.slice(-4)}`,
+    })),
     sys: {
       node: process.version,
       uptime: Math.floor((Date.now() - startTime) / 1000),
@@ -791,7 +834,9 @@ app.post('/admin/api/accounts', (req: Request, res: Response) => {
     }
     const list = String(tokens).split(',').map(s => s.trim()).filter(Boolean);
     list.forEach(t => {
-      accountPool.push({ value: t, ok: true });
+      if (!accountPool.some(account => account.value === t)) {
+        accountPool.push({ value: t, ok: true, failures: 0 });
+      }
     });
     res.json({ success: true });
   } catch (err: any) {
@@ -893,7 +938,7 @@ app.get('/v1/models', (req: Request, res: Response) => {
     { id: 'qwen-coder', description: 'Alias for qwen3-coder-plus' }
   ];
 
-  const models: any[] = [];
+  const models: any[] = deepSeekModels();
   for (const base of baseModels) {
     models.push({ id: base.id, object: 'model', created: 1720000000, owned_by: 'qwen-free-api', description: base.description });
     models.push({ id: `${base.id}-thinking`, object: 'model', created: 1720000000, owned_by: 'qwen-free-api', description: `${base.description} (Force thinking)` });
@@ -947,7 +992,7 @@ app.post('/v1/images/generations', async (req: Request, res: Response) => {
     });
 
     if (!createResp.data?.success || !createResp.data?.data?.id) {
-      if (accountRef) accountRef.ok = false;
+      markAccountFailure(accountRef);
       console.error(`[Qwen API] Create chat failed. Upstream response:`, JSON.stringify(createResp.data));
       return res.status(500).json({ error: { message: createResp.data?.data?.message || 'Failed to create image generation session', type: 'api_error' } });
     }
@@ -1013,6 +1058,8 @@ app.post('/v1/images/generations', async (req: Request, res: Response) => {
     }
 
     const created = Math.floor(Date.now() / 1000);
+    markAccountSuccess(accountRef);
+    res.setHeader('x-conduit-provider', 'qwen');
     if (response_format === 'url') {
       return res.json({
         created,
@@ -1027,13 +1074,17 @@ app.post('/v1/images/generations', async (req: Request, res: Response) => {
 
     return res.json({ created, data: b64DataList });
   } catch (err: any) {
-    if (accountRef) accountRef.ok = false;
+    markAccountFailure(accountRef);
     console.error(`[Qwen API] Upstream error:`, err.response?.data ? JSON.stringify(err.response.data) : err.message);
     res.status(500).json({ error: { message: err.message, type: 'api_error' } });
   }
 });
 
-// Chat Completions endpoint
+// DeepSeek remains an isolated provider service so its specialized TLS,
+// proof-of-work, account, and session engine can evolve independently.
+app.post('/v1/chat/completions', proxyDeepSeekChat);
+
+// Qwen Chat Completions provider
 app.post('/v1/chat/completions', async (req: Request, res: Response) => {
   let accountRef: Account | undefined;
   try {
@@ -1075,7 +1126,7 @@ app.post('/v1/chat/completions', async (req: Request, res: Response) => {
     });
 
     if (!createResp.data?.success || !createResp.data?.data?.id) {
-      if (accountRef) accountRef.ok = false;
+      markAccountFailure(accountRef);
       console.error(`[Qwen API] Create chat failed. Upstream response:`, JSON.stringify(createResp.data));
       return res.status(500).json({ error: { message: createResp.data?.data?.message || 'Failed to create chat session', type: 'api_error' } });
     }
@@ -1195,6 +1246,8 @@ Generate the assistant response again. Follow the tool protocol exactly. Do not 
     }
     const parsedToolCalls = toolResult.kind === 'tool_calls' ? toolResult.toolCalls : null;
     const cleanContent = toolResult.cleanText;
+    markAccountSuccess(accountRef);
+    res.setHeader('x-conduit-provider', 'qwen');
 
     if (!stream) {
       const prompt_tokens = Math.ceil(promptContent.length / 4);
@@ -1304,7 +1357,7 @@ Generate the assistant response again. Follow the tool protocol exactly. Do not 
         }
       });
     }
-    if (accountRef) accountRef.ok = false;
+    markAccountFailure(accountRef);
     console.error(`[Qwen API] Upstream error:`, err.response?.data ? JSON.stringify(err.response.data) : err.message);
     return res.status(500).json({ error: { message: err.message, type: 'api_error' } });
   }

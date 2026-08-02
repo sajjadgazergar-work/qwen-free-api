@@ -342,7 +342,7 @@
             tbodyDash.innerHTML += `
               <tr class="hover:bg-slate-900/40 transition-colors">
                 <td class="px-6 py-4 font-mono font-medium text-slate-300">Ticket #${i + 1}</td>
-                <td class="px-6 py-4 text-xs font-mono text-slate-400">${acc.value.slice(0, 24)}...</td>
+                <td class="px-6 py-4 text-xs font-mono text-slate-400">${acc.credential}</td>
                 <td class="px-6 py-4">
                   <span class="inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-semibold ${acc.ok ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}">
                     <span class="h-1.5 w-1.5 rounded-full ${acc.ok ? 'bg-emerald-400' : 'bg-red-400'}"></span>
@@ -365,7 +365,7 @@
             tbodyAccs.innerHTML += `
               <tr class="hover:bg-slate-900/40 transition-colors">
                 <td class="px-6 py-4 font-bold text-slate-400">#${i + 1}</td>
-                <td class="px-6 py-4 font-mono text-xs select-all break-all pr-12 text-slate-300">${acc.value}</td>
+                <td class="px-6 py-4 font-mono text-xs select-all break-all pr-12 text-slate-300">${acc.credential}</td>
                 <td class="px-6 py-4">
                   <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${acc.ok ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' : 'bg-red-950 text-red-400 border border-red-800'}">
                     ${acc.ok ? 'Active' : 'Unhealthy'}

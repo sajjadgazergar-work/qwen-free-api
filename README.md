@@ -167,3 +167,83 @@ Configure these in your Railway service variables:
 | `PORT` | Listening port (Default: `8000`) |
 | `API_TOKENS` | Comma-separated list of Qwen tickets to use as a global pool. If set, you can call the API using any generic auth token. |
 | `ENABLE_SEARCH` | Set to `true` to enable web search query integration on Qwen backend (Default: `false`). |
+
+---
+
+# Conduit v0.1: Qwen + DeepSeek
+
+This source tree is now the first Conduit release: one OpenAI-compatible entry
+point with two web providers.
+
+## Provider routing
+
+No new client endpoint is required. Send requests to `/v1/chat/completions`:
+
+- models beginning with `qwen` route to the native Qwen adapter;
+- models beginning with `deepseek-` route to the DeepSeek provider;
+- `"provider": "deepseek"` can explicitly select DeepSeek and is removed before
+  forwarding upstream;
+- `GET /v1/models` combines both providers;
+- `GET /admin/api/providers` reports provider configuration and health.
+
+The response includes `x-conduit-provider: qwen|deepseek` for observability.
+
+## Why DeepSeek is isolated
+
+The DeepSeek web transport needs TLS client emulation, a WASM proof-of-work
+solver, session lifecycle cleanup, account re-login, streaming repair, and file
+upload behavior. Conduit therefore keeps the audited Rust implementation as an
+isolated service instead of translating those security-sensitive details into a
+partial JavaScript clone. This also provides a stable provider boundary for
+adding future websites.
+
+The DeepSeek source is included under `providers/deepseek`. See
+`THIRD_PARTY_NOTICES.md` before redistribution.
+
+## Start v0.1
+
+```bash
+cp .env.example .env
+cp config/deepseek.toml.example config/deepseek.toml
+# Edit .env and config/deepseek.toml, then:
+docker compose up --build -d
+```
+
+In `config/deepseek.toml`, add one or more account credentials:
+
+```toml
+[[ds_core.accounts]]
+email = "you@example.com"
+mobile = ""
+area_code = ""
+password = "your-password"
+```
+
+DeepSeek obtains and refreshes its bearer token internally. Conduit never sends
+those account passwords to API clients.
+
+For Qwen, put a comma-separated credential pool in `QWEN_TOKENS`. Supported
+values remain complete Cookie headers, `login_aliyunid_ticket`,
+`tongyi_sso_ticket`, and currently supported Qwen web bearer values.
+
+## Qwen username/password status
+
+Direct server-side email/password login is intentionally **not** implemented in
+v0.1. Unlike DeepSeek's stable `/users/login` flow, Qwen authentication is an
+Alibaba identity/SSO browser flow that may involve CAPTCHA, OTP, federated login,
+and device-risk checks. Automating it by replaying credentials would be brittle
+and would encourage storing passwords in plaintext. The provider boundary is
+ready for a future user-driven browser/device authorization flow, but Conduit
+will not pretend that a reliable password endpoint exists.
+
+## Tool calling
+
+Qwen uses Conduit's canonical schema-preserving tool protocol and bounded repair
+step. DeepSeek keeps its native three-tier tool-call parser and repair pipeline.
+Both produce the same OpenAI `assistant.tool_calls`, continuation messages, SSE
+chunks, and `finish_reason: "tool_calls"` contract at the public endpoint.
+
+This is deliberate for v0.1: normalize the external protocol while allowing
+each model family to use the prompt grammar and recovery behavior it follows
+best. A later shared provider contract can consolidate metrics and conformance
+tests without forcing one model's internal tags onto another.

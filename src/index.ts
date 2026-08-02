@@ -805,15 +805,26 @@ app.delete('/admin/api/logs', (req: Request, res: Response) => {
 // Original OpenAI Compatibility Routes
 // ============================================
 
+function resolveModelName(model?: string): string {
+  if (!model) return 'qwen3-235b-a22b';
+  const m = model.toLowerCase().trim();
+  if (m === 'qwen3-coder-plus' || m === 'qwen3-coder' || m === 'qwen-coder') return 'qwen3-coder-plus';
+  if (m === 'qwen3-coder-30b-a3b-instruct' || m === 'qwen3-coder-flash' || m.includes('coder-flash') || m.includes('coder-30b')) return 'qwen3-coder-30b-a3b-instruct';
+  if (m === 'qwen3-30b-a3b' || m === 'qwen3-30b' || m.includes('30b') || m.includes('plus') || m.includes('turbo')) return 'qwen3-30b-a3b';
+  if (m === 'qwen-max-latest' || m === 'qwen2.5-max' || m.includes('max')) return 'qwen-max-latest';
+  return 'qwen3-235b-a22b';
+}
+
 // Model List endpoint
 app.get('/v1/models', (req: Request, res: Response) => {
   res.json({
     object: 'list',
     data: [
-      { id: 'qwen3.5-plus', object: 'model', created: 1720000000, owned_by: 'alibaba' },
-      { id: 'qwen3.5-flash', object: 'model', created: 1720000000, owned_by: 'alibaba' },
-      { id: 'qwen3.5-turbo', object: 'model', created: 1720000000, owned_by: 'alibaba' },
-      { id: 'qwen-max', object: 'model', created: 1720000000, owned_by: 'alibaba' }
+      { id: 'qwen3-235b-a22b', object: 'model', created: 1720000000, owned_by: 'qwen-free-api', description: 'Most powerful Hybrid-of-Experts language model (235B-A22B-2507)' },
+      { id: 'qwen3-coder-plus', object: 'model', created: 1720000000, owned_by: 'qwen-free-api', description: 'Strong coding and tool-use model' },
+      { id: 'qwen3-30b-a3b', object: 'model', created: 1720000000, owned_by: 'qwen-free-api', description: 'Compact and high performance Mixture-of-Experts model' },
+      { id: 'qwen3-coder-30b-a3b-instruct', object: 'model', created: 1720000000, owned_by: 'qwen-free-api', description: 'Fast and accurate coding model (Coder-Flash)' },
+      { id: 'qwen-max-latest', object: 'model', created: 1720000000, owned_by: 'qwen-free-api', description: 'Standard Qwen2.5-Max language model' }
     ]
   });
 });
@@ -832,7 +843,7 @@ app.post('/v1/images/generations', async (req: Request, res: Response) => {
       return res.status(400).json({ error: { message: 'prompt is required', type: 'invalid_request_error' } });
     }
 
-    const actualModel = model || 'qwen3.5-plus';
+    const actualModel = resolveModelName(model);
     const qwenRatio = mapOpenAiImageSizeToQwenRatio(size);
     const baxia = await getBaxiaTokens();
 
@@ -954,10 +965,10 @@ app.post('/v1/chat/completions', async (req: Request, res: Response) => {
     
     const { model, messages, stream = false } = req.body;
     if (!messages || messages.length === 0) {
-      return res.status(400).json({ error: { message: 'messages list is required', type: 'invalid_request_error' } });
+       return res.status(400).json({ error: { message: 'messages list is required', type: 'invalid_request_error' } });
     }
 
-    const actualModel = model || 'qwen3.5-plus';
+    const actualModel = resolveModelName(model);
     const baxia = await getBaxiaTokens();
     const enableSearch = process.env.ENABLE_SEARCH === 'true';
     const chatType = enableSearch ? 'search' : 't2t';

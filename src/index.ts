@@ -943,6 +943,7 @@ app.post('/v1/images/generations', async (req: Request, res: Response) => {
 
     if (!createResp.data?.success || !createResp.data?.data?.id) {
       if (accountRef) accountRef.ok = false;
+      console.error(`[Qwen API] Create chat failed. Upstream response:`, JSON.stringify(createResp.data));
       return res.status(500).json({ error: { message: createResp.data?.data?.message || 'Failed to create image generation session', type: 'api_error' } });
     }
     const chatId = createResp.data.data.id;
@@ -1022,6 +1023,7 @@ app.post('/v1/images/generations', async (req: Request, res: Response) => {
     return res.json({ created, data: b64DataList });
   } catch (err: any) {
     if (accountRef) accountRef.ok = false;
+    console.error(`[Qwen API] Upstream error:`, err.response?.data ? JSON.stringify(err.response.data) : err.message);
     res.status(500).json({ error: { message: err.message, type: 'api_error' } });
   }
 });
@@ -1069,6 +1071,7 @@ app.post('/v1/chat/completions', async (req: Request, res: Response) => {
 
     if (!createResp.data?.success || !createResp.data?.data?.id) {
       if (accountRef) accountRef.ok = false;
+      console.error(`[Qwen API] Create chat failed. Upstream response:`, JSON.stringify(createResp.data));
       return res.status(500).json({ error: { message: createResp.data?.data?.message || 'Failed to create chat session', type: 'api_error' } });
     }
     const chatId = createResp.data.data.id;
@@ -1179,6 +1182,7 @@ app.post('/v1/chat/completions', async (req: Request, res: Response) => {
 
   } catch (err: any) {
     if (accountRef) accountRef.ok = false;
+    console.error(`[Qwen API] Upstream error:`, err.response?.data ? JSON.stringify(err.response.data) : err.message);
     res.status(500).json({ error: { message: err.message, type: 'api_error' } });
   }
 });

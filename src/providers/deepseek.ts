@@ -162,7 +162,8 @@ export async function getDeepSeekAccounts() {
       adminRequest<any>('get', '/admin/api/status', token), adminRequest<any>('get', '/admin/api/config', token),
     ]);
     const states = new Map((status.accounts || []).map((entry: any) => [entry.email || `${entry.area_code || ''}${entry.mobile || ''}`, entry]));
-    return (config.ds_core?.accounts || []).map((account: any, index: number) => {
+    const accounts = config.ds_core?.accounts || config.accounts || [];
+    return accounts.map((account: any, index: number) => {
       const key = account.email || `${account.area_code || ''}${account.mobile || ''}`;
       const runtime: any = states.get(key) || {};
       return { index, identity: key, state: runtime.state || 'configured', errorCount: runtime.error_count || 0, lastReleasedMs: runtime.last_released_ms || 0 };
@@ -179,10 +180,15 @@ export async function addDeepSeekAccount(input: DeepSeekAccountInput) {
   if (!password) throw new Error('Enter the password used to sign in at chat.deepseek.com.');
   return withAdmin(async token => {
     const config = await adminRequest<any>('get', '/admin/api/config', token);
-    const accounts = config.ds_core?.accounts || [];
+    const targetSection = config.ds_core || (config.accounts ? config : null);
+    const accounts = targetSection ? (targetSection.accounts || (config.accounts || [])) : [];
     if (accounts.some((a: any) => email ? a.email === email : a.mobile === mobile && a.area_code === areaCode)) throw new Error('This DeepSeek account is already configured.');
     accounts.push({ email, mobile, area_code: areaCode, password });
-    config.ds_core.accounts = accounts;
+    if (config.ds_core) {
+      config.ds_core.accounts = accounts;
+    } else {
+      config.accounts = accounts;
+    }
     return adminRequest<any>('put', '/admin/api/config', token, toWritableConfig(config));
   });
 }
@@ -190,17 +196,25 @@ export async function addDeepSeekAccount(input: DeepSeekAccountInput) {
 export async function removeDeepSeekAccount(index: number) {
   return withAdmin(async token => {
     const config = await adminRequest<any>('get', '/admin/api/config', token);
-    const accounts = config.ds_core?.accounts || [];
+    const accounts = config.ds_core?.accounts || config.accounts || [];
     if (!Number.isInteger(index) || index < 0 || index >= accounts.length) throw new Error('Invalid DeepSeek account index.');
     accounts.splice(index, 1);
-    config.ds_core.accounts = accounts;
+    if (config.ds_core) {
+      config.ds_core.accounts = accounts;
+    } else {
+      config.accounts = accounts;
+    }
     return adminRequest<any>('put', '/admin/api/config', token, toWritableConfig(config));
   });
 }
 
 function toWritableConfig(config: any) {
   return {
-    server: config.server, ds_core: config.ds_core, proxy: config.proxy,
+    server: config.server,
+    ...(config.ds_core ? { ds_core: config.ds_core } : {}),
+    ...(config.deepseek ? { deepseek: config.deepseek } : {}),
+    ...(config.accounts !== undefined ? { accounts: config.accounts } : {}),
+    proxy: config.proxy,
     admin: { password_hash: '', jwt_secret: '', jwt_issued_at: config.admin?.jwt_issued_at || 0, old_password: '', new_password: '' },
     api_keys: config.api_keys || [],
   };

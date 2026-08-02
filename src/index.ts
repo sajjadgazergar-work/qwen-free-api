@@ -763,40 +763,49 @@ function normalizeMarkupChars(text: string): string {
     .replace(/＞/g, '>');
 }
 
-// Parse XML/DSML tool calls from Qwen text stream
+// Parse XML/DSML/JSON tool calls from Qwen text stream
 function parseXmlToolCalls(text: string): any[] | null {
-  const normalized = normalizeMarkupChars(text || '');
-  const match = normalized.match(/<tool_calls\b[^>]*>([\s\S]*?)<\/tool_calls>/i);
-  let toolCallsBlock = '';
+  if (!text) return null;
+  const normalized = normalizeMarkupChars(text);
+  const calls: any[] = [];
 
-  if (match) {
-    toolCallsBlock = match[1];
-  } else {
-    // If no closing tag, attempt to parse partial/truncated blocks (stream repair)
-    const startMatch = normalized.match(/<tool_calls\b[^>]*>([\s\S]*)/i);
-    if (startMatch) {
-      toolCallsBlock = startMatch[1];
-    }
+  // 1. Try parsing JSON tool calls block inside <|tool_calls_begin|> or <tool_calls>
+  const jsonBlockMatch = normalized.match(/(?:<\|tool_calls_begin\|>|<tool_calls>)\s*(\[[\s\S]*?\])\s*(?:<\|tool_calls_end\|>|<\/tool_calls>|$)/i)
+                      || normalized.match(/(\[\s*\{\s*"name"\s*:[\s\S]*?\}\s*\])/i);
+  if (jsonBlockMatch) {
+    try {
+      const arr = JSON.parse(jsonBlockMatch[1]);
+      if (Array.isArray(arr) && arr.length > 0 && arr[0].name) {
+        for (const item of arr) {
+          calls.push({
+            id: `call_${uuidv4().replace(/-/g, '').substring(0, 12)}`,
+            type: 'function',
+            function: {
+              name: item.name,
+              arguments: typeof item.arguments === 'string' ? item.arguments : JSON.stringify(item.arguments || {})
+            }
+          });
+        }
+        return calls;
+      }
+    } catch {}
   }
 
-  if (!toolCallsBlock) return null;
-
-  const invokeRegex = /<invoke\s+name="([^"]+)"\b[^>]*>([\s\S]*?)<\/invoke>/gi;
-  const calls: any[] = [];
+  // 2. Try parsing <invoke name="...">...</invoke> tags (standalone or inside <tool_calls>)
+  const invokeRegex = /<invoke\s+name="([^"]+)"\b[^>]*>([\s\S]*?)(?:<\/invoke>|$)/gi;
   let m;
 
-  while ((m = invokeRegex.exec(toolCallsBlock)) !== null) {
+  while ((m = invokeRegex.exec(normalized)) !== null) {
     const name = m[1].trim();
     const inner = m[2];
     const args: Record<string, any> = {};
 
     // Match parameters inside invoke: <parameter name="key">val</parameter>
-    const paramRegex = /<parameter\s+name="([^"]+)"\b[^>]*>([\s\S]*?)<\/parameter>/gi;
+    const paramRegex = /<parameter\s+name="([^"]+)"\b[^>]*>([\s\S]*?)(?:<\/parameter>|$)/gi;
     let pm;
     while ((pm = paramRegex.exec(inner)) !== null) {
       const pname = pm[1].trim();
       let pval = pm[2].trim();
-      // Unwrap CDATA if present
       const cdataMatch = pval.match(/<!\[CDATA\[([\s\S]*?)]]>/i);
       if (cdataMatch) {
         pval = cdataMatch[1];
@@ -804,7 +813,7 @@ function parseXmlToolCalls(text: string): any[] | null {
       args[pname] = pval;
     }
 
-    // Also support direct parameter tags for Qwen3.7 lenient format (e.g. <path>...</path>)
+    // Direct parameter tags (e.g., <command>...</command>)
     const directRegex = /<([a-zA-Z0-9_-]+)\b[^>]*>([\s\S]*?)<\/\1>/gi;
     let dm;
     while ((dm = directRegex.exec(inner)) !== null) {
@@ -828,15 +837,42 @@ function parseXmlToolCalls(text: string): any[] | null {
     });
   }
 
-  return calls.length > 0 ? calls : null;
+  if (calls.length > 0) return calls;
+
+  // 3. Fallback: single JSON tool call object
+  const singleJsonMatch = normalized.match(/\{\s*"name"\s*:\s*"([^"]+)"\s*,\s*"arguments"\s*:[\s\S]*?\}/i);
+  if (singleJsonMatch) {
+    try {
+      const parsedObj = JSON.parse(singleJsonMatch[0]);
+      if (parsedObj.name) {
+        return [{
+          id: `call_${uuidv4().replace(/-/g, '').substring(0, 12)}`,
+          type: 'function',
+          function: {
+            name: parsedObj.name,
+            arguments: typeof parsedObj.arguments === 'string' ? parsedObj.arguments : JSON.stringify(parsedObj.arguments || {})
+          }
+        }];
+      }
+    } catch {}
+  }
+
+  return null;
 }
 
 function stripToolCallsMarkup(text: string): string {
-  return text.replace(/<tool_calls\b[^>]*>[\s\S]*?(<\/tool_calls>|$)/gi, '').trim();
+  if (!text) return '';
+  return text
+    .replace(/<tool_calls\b[^>]*>[\s\S]*?(<\/tool_calls>|$)/gi, '')
+    .replace(/<invoke\s+name="[^"]+"[\s\S]*?(<\/invoke>|$)/gi, '')
+    .replace(/<\|tool_calls_begin\|>[\s\S]*?(<\|tool_calls_end\|>|$)/gi, '')
+    .replace(/^Tool\s+[a-zA-Z0-9_-]+\s+does\s+not\s+exist\.?/gmi, '')
+    .trim();
 }
 
 function getPrefixText(text: string): string {
-  const match = text.match(/<tool_calls\b/i);
+  if (!text) return '';
+  const match = text.match(/(?:<tool_calls\b|<invoke\s+name=|<\|tool_calls_begin\|>)/i);
   if (match && match.index !== undefined) {
     return text.substring(0, match.index).trim();
   }

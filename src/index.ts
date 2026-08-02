@@ -965,7 +965,11 @@ app.delete('/admin/api/providers/gemini/accounts/:id', async (req: Request, res:
 });
 
 // Clear Request Logs
-app.delete('/admin/api/logs', (req: Request, res: Response) => {
+app.get('/admin/api/logs', (_req: Request, res: Response) => {
+  res.json({ success: true, logs: requestLogs });
+});
+
+app.delete('/admin/api/logs', (_req: Request, res: Response) => {
   requestLogs.length = 0;
   res.json({ success: true });
 });

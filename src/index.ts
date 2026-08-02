@@ -1433,6 +1433,7 @@ app.post('/v1/chat/completions', async (req: Request, res: Response) => {
 
     const responseId = `chatcmpl-${uuidv4()}`;
     const createdTime = Math.floor(Date.now() / 1000);
+    console.log(`[Qwen Raw SSE Response]:\n`, qwenResp.data);
     const sseParsed = parseQwenSsePayload(qwenResp.data);
 
     const toolResult = parseToolCalls(sseParsed.content);

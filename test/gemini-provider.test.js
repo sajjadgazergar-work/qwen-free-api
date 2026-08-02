@@ -49,6 +49,26 @@ test('proxies non-streaming Gemini chat and removes provider hint', async () => 
   await new Promise(resolve => server.close(resolve));
 });
 
+test('extracts Gemini session values from a complete Cookie header', async () => {
+  let received;
+  const server = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', chunk => body += chunk);
+    req.on('end', () => {
+      received = JSON.parse(body);
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ account: { id: 'personal', proxy: null, healthy: true } }));
+    });
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  process.env.GEMINI_BASE_URL = `http://127.0.0.1:${server.address().port}`;
+  const account = await provider.addGeminiAccount({ id: 'personal', cookie: 'NID=abc; __Secure-1PSID=primary; __Secure-1PSIDTS=rotating; other=value' });
+  assert.equal(account.healthy, true);
+  assert.equal(received.secure_1psid, 'primary');
+  assert.equal(received.secure_1psidts, 'rotating');
+  await new Promise(resolve => server.close(resolve));
+});
+
 test('reads live Gemini models when available', async () => {
   const server = http.createServer((_req, res) => {
     res.setHeader('content-type', 'application/json');

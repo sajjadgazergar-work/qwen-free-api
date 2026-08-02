@@ -5,8 +5,9 @@ const FALLBACK_MODELS = ['gemini-3-pro', 'gemini-3-flash'];
 
 export interface GeminiAccountInput {
   id?: string;
-  secure1psid: string;
+  secure1psid?: string;
   secure1psidts?: string;
+  cookie?: string;
   proxy?: string;
 }
 
@@ -16,15 +17,8 @@ export interface GeminiAccountView {
   healthy: boolean;
 }
 
-function baseUrl(): string | null {
-  const value = (process.env.GEMINI_BASE_URL || '').trim().replace(/\/$/, '');
-  return value || null;
-}
-
-function requireBaseUrl(): string {
-  const upstream = baseUrl();
-  if (!upstream) throw new Error('The Gemini provider is not configured. Set GEMINI_BASE_URL.');
-  return upstream;
+function baseUrl(): string {
+  return (process.env.GEMINI_BASE_URL || 'http://gemini:8000').trim().replace(/\/$/, '');
 }
 
 function managementHeaders(): Record<string, string> {
@@ -68,7 +62,6 @@ export function fallbackGeminiModels() {
 
 export async function geminiModels() {
   const upstream = baseUrl();
-  if (!upstream) return fallbackGeminiModels();
   try {
     const response = await axios.get(`${upstream}/v1/models`, {
       headers: upstreamHeaders(), timeout: 5_000, validateStatus: () => true,
@@ -86,10 +79,7 @@ export async function geminiModels() {
 
 export async function proxyGeminiChat(req: Request, res: Response, next: NextFunction) {
   if (!isGeminiRequest(req.body || {})) return next();
-  let upstream: string;
-  try { upstream = requireBaseUrl(); } catch (error) {
-    return res.status(503).json({ error: { message: (error as Error).message, type: 'api_error', code: 'provider_not_configured' } });
-  }
+  const upstream = baseUrl();
 
   const body = { ...req.body };
   delete body.provider;
@@ -117,7 +107,7 @@ export async function proxyGeminiChat(req: Request, res: Response, next: NextFun
 
 async function managementRequest<T>(method: 'get' | 'post' | 'delete', route: string, data?: unknown): Promise<T> {
   const response = await axios.request<T>({
-    method, url: `${requireBaseUrl()}${route}`, headers: managementHeaders(), data,
+    method, url: `${baseUrl()}${route}`, headers: managementHeaders(), data,
     timeout: Number(process.env.GEMINI_MANAGEMENT_TIMEOUT_MS) || 60_000,
     validateStatus: () => true,
   });
@@ -133,10 +123,16 @@ export async function getGeminiAccounts(): Promise<GeminiAccountView[]> {
   return result.accounts || [];
 }
 
+function cookieValue(cookie: string, name: string): string {
+  const match = cookie.match(new RegExp(`(?:^|;\\s*)${name.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&')}=([^;]+)`));
+  return match?.[1]?.trim() || '';
+}
+
 export async function addGeminiAccount(input: GeminiAccountInput): Promise<GeminiAccountView> {
-  const secure1psid = (input.secure1psid || '').trim();
-  const secure1psidts = (input.secure1psidts || '').trim();
-  if (!secure1psid) throw new Error('__Secure-1PSID is required.');
+  const pastedCookie = (input.cookie || '').trim();
+  const secure1psid = (input.secure1psid || '').trim() || cookieValue(pastedCookie, '__Secure-1PSID');
+  const secure1psidts = (input.secure1psidts || '').trim() || cookieValue(pastedCookie, '__Secure-1PSIDTS');
+  if (!secure1psid) throw new Error('Paste the complete Gemini Cookie header or its __Secure-1PSID value.');
   const result = await managementRequest<{ account: GeminiAccountView }>('post', '/conduit/accounts', {
     id: (input.id || '').trim() || undefined,
     secure_1psid: secure1psid,
@@ -153,19 +149,18 @@ export async function removeGeminiAccount(id: string) {
 
 export async function getGeminiStatus() {
   const upstream = baseUrl();
-  if (!upstream) return { id: 'gemini', enabled: false, baseUrl: null, healthy: null, accounts: 0 };
   try {
     const response = await axios.get(`${upstream}/health`, { timeout: 5_000, validateStatus: () => true });
     const clients = response.data?.clients && typeof response.data.clients === 'object' ? response.data.clients : {};
     const states = Object.values(clients) as boolean[];
     return {
-      id: 'gemini', enabled: true, baseUrl: upstream,
+      id: 'gemini', enabled: true,
       healthy: response.status >= 200 && response.status < 300 && response.data?.ok === true,
-      accounts: states.length,
+      accounts: states.length, setup: states.length ? 'ready' : 'needs_account',
       healthyAccounts: states.filter(Boolean).length,
       ...(response.data?.error ? { error: String(response.data.error) } : {}),
     };
   } catch (error) {
-    return { id: 'gemini', enabled: true, baseUrl: upstream, healthy: false, accounts: 0, error: (error as Error).message };
+    return { id: 'gemini', enabled: true, healthy: false, accounts: 0, setup: 'service_unavailable', error: (error as Error).message };
   }
 }

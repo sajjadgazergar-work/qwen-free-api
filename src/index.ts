@@ -19,7 +19,6 @@ import {
 } from './tool-calling';
 import {
   addDeepSeekAccount,
-  deepSeekAdminLogin,
   deepSeekModels,
   getDeepSeekAccounts,
   getDeepSeekStatus,
@@ -921,35 +920,19 @@ app.post('/admin/api/accounts', (req: Request, res: Response) => {
   res.json({ success: true });
 });
 
-app.post('/admin/api/providers/deepseek/session', async (req: Request, res: Response) => {
-  try { res.json({ success: true, ...(await deepSeekAdminLogin(String(req.body?.password || ''))) }); }
-  catch (err: any) { res.status(400).json({ success: false, error: err.message }); }
-});
-
-app.get('/admin/api/providers/deepseek/accounts', async (req: Request, res: Response) => {
-  try {
-    const token = String(req.headers['x-deepseek-admin-token'] || '');
-    if (!token) return res.status(401).json({ success: false, error: 'Connect the DeepSeek service first.' });
-    res.json({ success: true, accounts: await getDeepSeekAccounts(token) });
-  } catch (err: any) { res.status(502).json({ success: false, error: err.message }); }
+app.get('/admin/api/providers/deepseek/accounts', async (_req: Request, res: Response) => {
+  try { res.json({ success: true, accounts: await getDeepSeekAccounts() }); }
+  catch (err: any) { res.status(502).json({ success: false, error: err.message }); }
 });
 
 app.post('/admin/api/providers/deepseek/accounts', async (req: Request, res: Response) => {
-  try {
-    const token = String(req.headers['x-deepseek-admin-token'] || '');
-    if (!token) return res.status(401).json({ success: false, error: 'Connect the DeepSeek service first.' });
-    await addDeepSeekAccount(token, req.body || {});
-    res.json({ success: true });
-  } catch (err: any) { res.status(400).json({ success: false, error: err.message }); }
+  try { await addDeepSeekAccount(req.body || {}); res.json({ success: true }); }
+  catch (err: any) { res.status(400).json({ success: false, error: err.message }); }
 });
 
 app.delete('/admin/api/providers/deepseek/accounts/:index', async (req: Request, res: Response) => {
-  try {
-    const token = String(req.headers['x-deepseek-admin-token'] || '');
-    if (!token) return res.status(401).json({ success: false, error: 'Connect the DeepSeek service first.' });
-    await removeDeepSeekAccount(token, Number(req.params.index));
-    res.json({ success: true });
-  } catch (err: any) { res.status(400).json({ success: false, error: err.message }); }
+  try { await removeDeepSeekAccount(Number(req.params.index)); res.json({ success: true }); }
+  catch (err: any) { res.status(400).json({ success: false, error: err.message }); }
 });
 
 app.get('/admin/api/providers/gemini/accounts', async (_req: Request, res: Response) => {

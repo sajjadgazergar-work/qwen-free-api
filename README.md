@@ -1,4 +1,4 @@
-# Conduit v0.2
+# Conduit v0.2.1
 
 Conduit is an expandable, multi-provider harness that exposes website-backed AI providers through one OpenAI-compatible API and one provider-neutral control plane.
 
@@ -32,9 +32,10 @@ The managed-service boundary is deliberate. Gemini Web's private RPC shape, mode
 
 ```bash
 cp .env.example .env
-# Replace GEMINI_MANAGEMENT_KEY with a long random value.
 docker compose up --build -d
 ```
+
+The bundled stack wires DeepSeek and Gemini internally. Do not enter provider base URLs in the dashboard and do not expose the provider services. Every OpenAI-compatible client uses the single Conduit base URL shown on the dashboard.
 
 Open:
 
@@ -51,17 +52,20 @@ Qwen uses Alibaba browser SSO. Sign in at Qwen, then import the complete Cookie 
 
 ### DeepSeek
 
-Connect the managed service from the dashboard, then add an email/password or mobile/password account. The DeepSeek provider performs login and session refresh.
+Add the email/mobile account and the password used at `chat.deepseek.com`. Conduit creates and stores its own internal provider-management secret automatically; there is no separate provider-admin password to create, remember, or enter in the dashboard. The bundled provider performs website login and session refresh.
+
+DeepSeek's upstream project only supports account/password login; it does not currently support importing an existing browser cookie as an account. If the DeepSeek account was created through Google or another federated method and has no password, set a password through DeepSeek's account flow before adding it.
 
 ### Gemini
 
 Gemini uses Google browser sessions rather than direct password login:
 
 1. Open `https://gemini.google.com` in a private/incognito window and sign in.
-2. Open Developer Tools → Application/Storage → Cookies.
-3. Copy the values of `__Secure-1PSID` and `__Secure-1PSIDTS`.
-4. Add them in Conduit's Gemini account panel. `__Secure-1PSIDTS` can be left empty only when it is genuinely unavailable for that account.
-5. Optionally assign a per-account proxy.
+2. Open Developer Tools → Network, select a Gemini request, and copy its complete `Cookie` request header.
+3. Paste that one header into Conduit. Conduit extracts `__Secure-1PSID` and `__Secure-1PSIDTS` automatically.
+4. Optionally assign a per-account proxy.
+
+You can still submit the two values separately through the management API for backward compatibility.
 
 The provider validates the session before saving it. Secrets are never returned by Conduit's admin APIs. Auto-refreshed cookies are persisted in the Gemini cache volume.
 
@@ -118,10 +122,11 @@ Qwen uses Conduit's schema-preserving canonical tool protocol and bounded repair
 | `ADMIN_PASSWORD` | empty | Optional Basic Auth for dashboard routes |
 | `QWEN_TOKENS` | empty | Optional Qwen bootstrap sessions |
 | `QWEN_ACCOUNT_COOLDOWN_MS` | `30000` | Qwen cooldown after failure |
-| `DEEPSEEK_BASE_URL` | `http://deepseek:22217` | DeepSeek service address |
+| `DEEPSEEK_BASE_URL` | `http://deepseek:22217` | Advanced external-service override; bundled deployment needs no change |
+| `DEEPSEEK_ADMIN_PASSWORD` | generated automatically | Optional fixed internal management secret |
 | `DEEPSEEK_UPSTREAM_API_KEY` | empty | Optional DeepSeek API key |
-| `GEMINI_BASE_URL` | `http://gemini:8000` | Gemini service address |
-| `GEMINI_MANAGEMENT_KEY` | required for deployment | Internal account-management authentication |
+| `GEMINI_BASE_URL` | `http://gemini:8000` | Advanced external-service override; bundled deployment needs no change |
+| `GEMINI_MANAGEMENT_KEY` | private bundled default | Optional internal account-management authentication override |
 | `GEMINI_UPSTREAM_API_KEY` | empty | Optional Gemini service API key |
 | `GEMINI_TIMEOUT_MS` | `300000` | Gemini proxy timeout |
 | `GEMINI_MODELS` | fallback list | Models shown only when live discovery fails |

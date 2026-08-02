@@ -9,6 +9,7 @@ Unified OpenAI-compatible Gateway for Qwen Web API from scratch, mirroring the d
 - **Multimodal & Attachments support**: Supports parsing and uploading inline images/documents as attachments.
 - **Rotatable Account Pool**: Supports comma-separated tickets in environment variables or request headers.
 - **Robust stream handling**: SSE client-side streaming mapping Qwen's incremental response to OpenAI chat completion chunks.
+- **Validated tool calling**: Canonical Qwen function-call prompting, full JSON Schema preservation, OpenAI-compatible `tool_calls`, parallel calls, `tool_choice`, and multi-turn tool-result continuation.
 
 ## Deployed URL
 
@@ -44,6 +45,103 @@ curl -X POST https://qwen-free-api-production.up.railway.app/v1/chat/completions
     "stream": true
   }'
 ```
+
+#### Tool Calling
+
+The gateway acts as a protocol adapter: it decides when a client-provided function is needed and returns OpenAI-compatible `assistant.tool_calls`. The client executes those functions and sends their results back in `role: "tool"` messages. The gateway never executes arbitrary client functions itself.
+
+```bash
+curl -X POST https://qwen-free-api-production.up.railway.app/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_QWEN_TICKET" \
+  -d '{
+    "model": "qwen3-coder-plus",
+    "messages": [{"role":"user","content":"What time is it in Tehran?"}],
+    "tools": [{
+      "type": "function",
+      "function": {
+        "name": "get_time",
+        "description": "Get the current time in an IANA timezone.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["timezone"],
+          "properties": {"timezone":{"type":"string"}}
+        }
+      }
+    }],
+    "tool_choice": "auto",
+    "parallel_tool_calls": true
+  }'
+```
+
+A tool request is returned in the standard shape:
+
+```json
+{
+  "choices": [{
+    "message": {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [{
+        "id": "call_...",
+        "type": "function",
+        "function": {
+          "name": "get_time",
+          "arguments": "{\"timezone\":\"Asia/Tehran\"}"
+        }
+      }]
+    },
+    "finish_reason": "tool_calls"
+  }]
+}
+```
+
+Send the assistant call and matching result back to continue the conversation:
+
+```json
+{
+  "model": "qwen3-coder-plus",
+  "messages": [
+    {"role":"user","content":"What time is it in Tehran?"},
+    {
+      "role":"assistant",
+      "content":null,
+      "tool_calls":[{
+        "id":"call_abc",
+        "type":"function",
+        "function":{"name":"get_time","arguments":"{\"timezone\":\"Asia/Tehran\"}"}
+      }]
+    },
+    {
+      "role":"tool",
+      "tool_call_id":"call_abc",
+      "name":"get_time",
+      "content":"{\"time\":\"14:30\"}"
+    }
+  ],
+  "tools": [{
+    "type":"function",
+    "function":{
+      "name":"get_time",
+      "description":"Get the current time in an IANA timezone.",
+      "parameters":{
+        "type":"object",
+        "additionalProperties":false,
+        "required":["timezone"],
+        "properties":{"timezone":{"type":"string"}}
+      }
+    }
+  }]
+}
+```
+
+Supported controls:
+
+- `tool_choice`: `"none"`, `"auto"`, `"required"`, or a named function choice.
+- `parallel_tool_calls`: set `false` to permit at most one call in a response.
+- Full nested JSON Schemas are retained and validated before calls are returned.
+- Invalid tool names, invalid arguments, missing results, duplicate results, and mismatched call IDs return structured errors instead of being silently repaired.
 
 #### Image Generations
 

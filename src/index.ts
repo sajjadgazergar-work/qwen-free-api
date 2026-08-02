@@ -576,27 +576,22 @@ interface OpenAiMessage {
   name?: string;
 }
 
-const TOOL_CALL_INSTRUCTION = `You are an action-request serializer for an API client.
+const TOOL_CALL_START = '<|tool_calls_begin|>';
+const TOOL_CALL_END = '<|tool_calls_end|>';
 
-When the next assistant step requires a client capability (reading files, running commands, writing files, searching, listing directories, browsing, loading skills, etc.), serialize exactly one request as XML and output nothing else:
+const TOOL_CALL_INSTRUCTION = `**Tool Call Format — Strictly Follow:**
 
-<tool_calls>
-  <invoke name="CAPABILITY_NAME">
-    <parameter name="param"><![CDATA[value]]></parameter>
-  </invoke>
-</tool_calls>
+Wrap a JSON array in tool call markers:
 
-IMPORTANT:
-- You do not execute actions yourself. The API client executes the XML request after your response.
-- Never simulate command output, file contents, browser state, skill loading, or any other result.
-- The capability names listed below are valid client-side names. Never write prose such as "Tool X does not exist".
-- Use only exact names from the available capability list.
-- If you request the Skill capability, always include its required \`skill\` parameter. Example: <parameter name="skill"><![CDATA[pentest-assistant-reasoning]]></parameter>.
-- For multi-step tasks, serialize ONE capability request first. You will receive the result, then you can request the next step.
-- Put every argument in a <parameter> tag. Use CDATA for paths, commands, file contents, JSON, and multiline values.
-- Do not wrap the XML block in Markdown fences.
-- Do not use legacy <|tool_call|> tags.
-- When no action is needed (greetings, general knowledge), respond normally with text.`;
+${TOOL_CALL_START}[{"name": "TOOL_NAME", "arguments": {"PARAM": "VALUE"}}]${TOOL_CALL_END}
+
+**Rules:**
+1. When you decide to call a tool, your response MUST contain ONLY the tool call block itself. No greetings, explanations, summaries, or Markdown code fences.
+2. The JSON array must start with \`${TOOL_CALL_START}\` and end with \`${TOOL_CALL_END}\`.
+3. All tool calls must be placed in ONE JSON array.
+4. Stop immediately after \`${TOOL_CALL_END}\`.
+5. String argument values must be properly escaped JSON strings.
+6. Use ONLY exact tool names from the available tool list below.`;
 
 function formatToolsPrompt(tools: any[]): string {
   const lines: string[] = [];
@@ -763,57 +758,89 @@ function normalizeMarkupChars(text: string): string {
     .replace(/＞/g, '>');
 }
 
-// Parse XML/DSML/JSON tool calls from Qwen text stream
-function parseXmlToolCalls(text: string): any[] | null {
+interface ParsedToolResult {
+  toolCalls: any[];
+  cleanText: string;
+}
+
+// Parse XML/DSML/JSON tool calls from Qwen text stream (ds-free-api parity)
+function parseToolCalls(text: string): ParsedToolResult | null {
   if (!text) return null;
   const normalized = normalizeMarkupChars(text);
+
+  // Look for any start marker
+  const startMatch = normalized.match(/(?:<\|tool_calls_begin\|>|<tool_calls>|<invoke\s+name=)/i);
+  if (!startMatch || startMatch.index === undefined) {
+    return null;
+  }
+
+  const startPos = startMatch.index;
+
+  // Look for end marker starting after startPos
+  let endPos = normalized.length;
+  const searchSub = normalized.substring(startPos);
+
+  const endMatch = searchSub.match(/(?:<\|tool_calls_end\|>|<\/tool_calls>|<\/invoke>)/i);
+  if (endMatch && endMatch.index !== undefined) {
+    endPos = startPos + endMatch.index + endMatch[0].length;
+  }
+
+  const blockText = normalized.substring(startPos, endPos);
+  const prefixText = normalized.substring(0, startPos);
+  const suffixText = normalized.substring(endPos);
+  
+  const rawClean = (prefixText + suffixText)
+    .replace(/^Tool\s+[a-zA-Z0-9_-]+\s+does\s+not\s+exist\.?/gmi, '')
+    .replace(/<\|tool_calls_begin\|>|<\|tool_calls_end\|>|<tool_calls>|<\/tool_calls>/gi, '')
+    .trim();
+
   const calls: any[] = [];
 
-  // 1. Try parsing JSON tool calls block inside <|tool_calls_begin|> or <tool_calls>
-  const jsonBlockMatch = normalized.match(/(?:<\|tool_calls_begin\|>|<tool_calls>)\s*(\[[\s\S]*?\])\s*(?:<\|tool_calls_end\|>|<\/tool_calls>|$)/i)
-                      || normalized.match(/(\[\s*\{\s*"name"\s*:[\s\S]*?\}\s*\])/i);
-  if (jsonBlockMatch) {
+  // Strategy 1: JSON array inside blockText or normalized
+  const jsonArrMatch = blockText.match(/\[\s*\{[\s\S]*?\}\s*\]/);
+  if (jsonArrMatch) {
     try {
-      const arr = JSON.parse(jsonBlockMatch[1]);
-      if (Array.isArray(arr) && arr.length > 0 && arr[0].name) {
+      const arr = JSON.parse(jsonArrMatch[0]);
+      if (Array.isArray(arr) && arr.length > 0) {
         for (const item of arr) {
-          calls.push({
-            id: `call_${uuidv4().replace(/-/g, '').substring(0, 12)}`,
-            type: 'function',
-            function: {
-              name: item.name,
-              arguments: typeof item.arguments === 'string' ? item.arguments : JSON.stringify(item.arguments || {})
-            }
-          });
+          if (item && item.name) {
+            calls.push({
+              id: `call_${uuidv4().replace(/-/g, '').substring(0, 12)}`,
+              type: 'function',
+              function: {
+                name: item.name,
+                arguments: typeof item.arguments === 'string' ? item.arguments : JSON.stringify(item.arguments || {})
+              }
+            });
+          }
         }
-        return calls;
       }
     } catch {}
   }
 
-  // 2. Try parsing <invoke name="...">...</invoke> tags (standalone or inside <tool_calls>)
+  if (calls.length > 0) {
+    return { toolCalls: calls, cleanText: rawClean };
+  }
+
+  // Strategy 2: XML <invoke name="...">...</invoke> tags
   const invokeRegex = /<invoke\s+name="([^"]+)"\b[^>]*>([\s\S]*?)(?:<\/invoke>|$)/gi;
   let m;
 
-  while ((m = invokeRegex.exec(normalized)) !== null) {
+  while ((m = invokeRegex.exec(blockText)) !== null) {
     const name = m[1].trim();
     const inner = m[2];
     const args: Record<string, any> = {};
 
-    // Match parameters inside invoke: <parameter name="key">val</parameter>
     const paramRegex = /<parameter\s+name="([^"]+)"\b[^>]*>([\s\S]*?)(?:<\/parameter>|$)/gi;
     let pm;
     while ((pm = paramRegex.exec(inner)) !== null) {
       const pname = pm[1].trim();
       let pval = pm[2].trim();
       const cdataMatch = pval.match(/<!\[CDATA\[([\s\S]*?)]]>/i);
-      if (cdataMatch) {
-        pval = cdataMatch[1];
-      }
+      if (cdataMatch) pval = cdataMatch[1];
       args[pname] = pval;
     }
 
-    // Direct parameter tags (e.g., <command>...</command>)
     const directRegex = /<([a-zA-Z0-9_-]+)\b[^>]*>([\s\S]*?)<\/\1>/gi;
     let dm;
     while ((dm = directRegex.exec(inner)) !== null) {
@@ -821,9 +848,7 @@ function parseXmlToolCalls(text: string): any[] | null {
       if (tag === 'parameter' || tag === 'invoke') continue;
       let val = dm[2].trim();
       const cdataMatch = val.match(/<!\[CDATA\[([\s\S]*?)]]>/i);
-      if (cdataMatch) {
-        val = cdataMatch[1];
-      }
+      if (cdataMatch) val = cdataMatch[1];
       args[dm[1]] = val;
     }
 
@@ -837,22 +862,25 @@ function parseXmlToolCalls(text: string): any[] | null {
     });
   }
 
-  if (calls.length > 0) return calls;
+  if (calls.length > 0) {
+    return { toolCalls: calls, cleanText: rawClean };
+  }
 
-  // 3. Fallback: single JSON tool call object
-  const singleJsonMatch = normalized.match(/\{\s*"name"\s*:\s*"([^"]+)"\s*,\s*"arguments"\s*:[\s\S]*?\}/i);
+  // Strategy 3: Single JSON object
+  const singleJsonMatch = blockText.match(/\{\s*"name"\s*:\s*"([^"]+)"\s*,\s*"arguments"\s*:[\s\S]*?\}/);
   if (singleJsonMatch) {
     try {
-      const parsedObj = JSON.parse(singleJsonMatch[0]);
-      if (parsedObj.name) {
-        return [{
+      const obj = JSON.parse(singleJsonMatch[0]);
+      if (obj && obj.name) {
+        calls.push({
           id: `call_${uuidv4().replace(/-/g, '').substring(0, 12)}`,
           type: 'function',
           function: {
-            name: parsedObj.name,
-            arguments: typeof parsedObj.arguments === 'string' ? parsedObj.arguments : JSON.stringify(parsedObj.arguments || {})
+            name: obj.name,
+            arguments: typeof obj.arguments === 'string' ? obj.arguments : JSON.stringify(obj.arguments || {})
           }
-        }];
+        });
+        return { toolCalls: calls, cleanText: rawClean };
       }
     } catch {}
   }
@@ -1407,12 +1435,13 @@ app.post('/v1/chat/completions', async (req: Request, res: Response) => {
     const createdTime = Math.floor(Date.now() / 1000);
     const sseParsed = parseQwenSsePayload(qwenResp.data);
 
-    const parsedToolCalls = parseXmlToolCalls(sseParsed.content);
+    const toolResult = parseToolCalls(sseParsed.content);
+    const parsedToolCalls = toolResult?.toolCalls || null;
+    const cleanContent = toolResult ? toolResult.cleanText : stripToolCallsMarkup(sseParsed.content);
 
     if (!stream) {
       const prompt_tokens = Math.ceil(parsed.content.length / 4);
       const completion_tokens = Math.ceil(sseParsed.content.length / 4);
-      const cleanContent = stripToolCallsMarkup(sseParsed.content);
 
       return res.json({
         id: responseId,
@@ -1442,10 +1471,7 @@ app.post('/v1/chat/completions', async (req: Request, res: Response) => {
     res.setHeader('Connection', 'keep-alive');
 
     if (parsedToolCalls) {
-      const prefixText = getPrefixText(sseParsed.content);
-      const cleanPrefix = stripToolCallsMarkup(prefixText);
-
-      if (cleanPrefix) {
+      if (cleanContent) {
         res.write(`data: ${JSON.stringify({
           id: responseId,
           object: 'chat.completion.chunk',
@@ -1453,7 +1479,7 @@ app.post('/v1/chat/completions', async (req: Request, res: Response) => {
           model: actualModel,
           choices: [{
             index: 0,
-            delta: { role: 'assistant', content: cleanPrefix },
+            delta: { role: 'assistant', content: cleanContent },
             finish_reason: null,
           }],
         })}\n\n`);

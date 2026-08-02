@@ -4,6 +4,11 @@ const http = require('node:http');
 
 const provider = require('../dist/providers/deepseek.js');
 
+test('defaults DeepSeek to the host development endpoint', () => {
+  delete process.env.DEEPSEEK_BASE_URL;
+  assert.equal(provider.deepSeekBaseUrl(), 'http://127.0.0.1:22217');
+});
+
 test('routes explicit and model-selected DeepSeek requests', () => {
   assert.equal(provider.isDeepSeekRequest({ model: 'deepseek-expert' }), true);
   assert.equal(provider.isDeepSeekRequest({ provider: 'deepseek', model: 'custom' }), true);

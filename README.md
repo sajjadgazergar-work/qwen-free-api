@@ -1,4 +1,4 @@
-# Conduit v0.2.1
+# Conduit v0.2.2
 
 Conduit is an expandable, multi-provider harness that exposes website-backed AI providers through one OpenAI-compatible API and one provider-neutral control plane.
 
@@ -30,19 +30,26 @@ The managed-service boundary is deliberate. Gemini Web's private RPC shape, mode
 
 ## Start
 
+The full Docker Compose stack is the canonical deployment:
+
 ```bash
 cp .env.example .env
+# Change ADMIN_PASSWORD in .env before exposing Conduit.
 docker compose up --build -d
 ```
 
-The bundled stack wires DeepSeek and Gemini internally. Do not enter provider base URLs in the dashboard and do not expose the provider services. Every OpenAI-compatible client uses the single Conduit base URL shown on the dashboard.
+The bundled stack sets Docker-internal provider URLs explicitly. Conduit remains alive if one managed provider is unavailable, allowing healthy providers to continue serving requests.
 
 Open:
 
 - Dashboard: `http://localhost:8000/admin`
 - OpenAI base URL: `http://localhost:8000/v1`
+- Process health: `http://localhost:8000/health/live`
+- Provider readiness: `http://localhost:8000/health/ready`
 
-Provider state persists under `./data`; provider configuration persists under `./config`.
+Provider state persists under `./data`; writable provider configuration persists under `./config`.
+
+For prerequisites, account onboarding, host-side development, upgrades, verification, security, and error-specific fixes, see **[INSTALLATION.md](INSTALLATION.md)**.
 
 ## Account onboarding
 
@@ -122,10 +129,10 @@ Qwen uses Conduit's schema-preserving canonical tool protocol and bounded repair
 | `ADMIN_PASSWORD` | empty | Optional Basic Auth for dashboard routes |
 | `QWEN_TOKENS` | empty | Optional Qwen bootstrap sessions |
 | `QWEN_ACCOUNT_COOLDOWN_MS` | `30000` | Qwen cooldown after failure |
-| `DEEPSEEK_BASE_URL` | `http://deepseek:22217` | Advanced external-service override; bundled deployment needs no change |
+| `DEEPSEEK_BASE_URL` | host: `http://127.0.0.1:22217`; Compose: `http://deepseek:22217` | Explicit provider service URL |
 | `DEEPSEEK_ADMIN_PASSWORD` | generated automatically | Optional fixed internal management secret |
 | `DEEPSEEK_UPSTREAM_API_KEY` | empty | Optional DeepSeek API key |
-| `GEMINI_BASE_URL` | `http://gemini:8000` | Advanced external-service override; bundled deployment needs no change |
+| `GEMINI_BASE_URL` | host: `http://127.0.0.1:18000`; Compose: `http://gemini:8000` | Explicit provider service URL |
 | `GEMINI_MANAGEMENT_KEY` | private bundled default | Optional internal account-management authentication override |
 | `GEMINI_UPSTREAM_API_KEY` | empty | Optional Gemini service API key |
 | `GEMINI_TIMEOUT_MS` | `300000` | Gemini proxy timeout |

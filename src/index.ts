@@ -839,6 +839,20 @@ app.get('/', (req: Request, res: Response) => {
   res.send('Conduit is running with Qwen, DeepSeek, and Gemini providers. Use POST /v1/chat/completions or visit /admin.');
 });
 
+// Process liveness is intentionally independent of provider availability.
+// Conduit remains useful when only one provider is configured or healthy.
+app.get('/health/live', (_req: Request, res: Response) => {
+  res.json({ status: 'ok', service: 'conduit', uptimeSeconds: Math.floor(process.uptime()) });
+});
+
+app.get('/health/ready', async (_req: Request, res: Response) => {
+  const [deepseek, gemini] = await Promise.all([getDeepSeekStatus(), getGeminiStatus()]);
+  const qwen = { id: 'qwen', healthy: accountPool.some(account => account.ok), accounts: accountPool.length };
+  const providers = [qwen, deepseek, gemini];
+  const ready = providers.some(provider => provider.healthy === true);
+  res.status(ready ? 200 : 503).json({ status: ready ? 'ready' : 'degraded', ready, providers });
+});
+
 // Fetch metrics & stats
 app.get('/admin/api/providers', async (_req: Request, res: Response) => {
   const [deepseek, gemini] = await Promise.all([getDeepSeekStatus(), getGeminiStatus()]);
@@ -1455,16 +1469,27 @@ Generate the assistant response again. Follow the tool protocol exactly. Do not 
   }
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server running on port ${PORT}`);
-  try {
-    console.log('cwd:', process.cwd());
-    console.log('cwd contents:', fs.readdirSync(process.cwd()));
-    console.log('__dirname:', __dirname);
-    console.log('__dirname contents:', fs.readdirSync(__dirname));
-    const targetPath = path.join(process.cwd(), 'public/admin.html');
-    console.log(`targetPath (${targetPath}) exists:`, fs.existsSync(targetPath));
-  } catch (err: any) {
-    console.log('Debug logging failed:', err.message);
-  }
+const server = app.listen(PORT, '0.0.0.0', () => {
+  console.log(`[Conduit] Listening on port ${PORT}.`);
+  console.log(`[Conduit] Provider URLs: DeepSeek=${process.env.DEEPSEEK_BASE_URL || 'http://127.0.0.1:22217'}, Gemini=${process.env.GEMINI_BASE_URL || 'http://127.0.0.1:18000'}`);
 });
+
+let shuttingDown = false;
+function shutdown(signal: string) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`[Conduit] ${signal} received; draining HTTP connections.`);
+  server.close(error => {
+    if (error) {
+      console.error('[Conduit] Graceful shutdown failed:', error);
+      process.exitCode = 1;
+    }
+    process.exit();
+  });
+  setTimeout(() => {
+    console.error('[Conduit] Shutdown deadline exceeded; forcing exit.');
+    process.exit(1);
+  }, 10_000).unref();
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));

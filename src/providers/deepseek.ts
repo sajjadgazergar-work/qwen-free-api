@@ -15,6 +15,7 @@ export interface ProviderStatus {
   accounts?: number;
   setup?: 'ready' | 'needs_account' | 'service_unavailable';
   error?: string;
+  baseUrl?: string;
 }
 
 export interface DeepSeekAccountInput {
@@ -24,8 +25,24 @@ export interface DeepSeekAccountInput {
   password: string;
 }
 
-function baseUrl(): string {
-  return (process.env.DEEPSEEK_BASE_URL || 'http://deepseek:22217').trim().replace(/\/$/, '');
+export function deepSeekBaseUrl(): string {
+  const configured = (process.env.DEEPSEEK_BASE_URL || 'http://127.0.0.1:22217').trim();
+  try {
+    const url = new URL(configured);
+    if (!['http:', 'https:'].includes(url.protocol)) throw new Error('unsupported protocol');
+    return configured.replace(/\/$/, '');
+  } catch {
+    throw new Error(`Invalid DEEPSEEK_BASE_URL: ${configured || '(empty)'}`);
+  }
+}
+
+function providerError(error: unknown): string {
+  const err = error as AxiosError & { code?: string };
+  const upstream = (() => { try { return deepSeekBaseUrl(); } catch { return 'the configured URL'; } })();
+  if (err.code === 'ENOTFOUND') return `Cannot resolve the DeepSeek host at ${upstream}. Use http://deepseek:22217 inside Docker Compose or http://127.0.0.1:22217 when Conduit runs on the host.`;
+  if (err.code === 'ECONNREFUSED') return `DeepSeek is not listening at ${upstream}. Start the DeepSeek service or correct DEEPSEEK_BASE_URL.`;
+  if (err.code === 'ETIMEDOUT' || err.code === 'ECONNABORTED') return `DeepSeek timed out at ${upstream}. The service may still be starting.`;
+  return err.message || 'DeepSeek provider request failed.';
 }
 
 function adminSecretFile(): string {
@@ -79,7 +96,7 @@ export async function proxyDeepSeekChat(req: Request, res: Response, next: NextF
   delete body.provider;
   try {
     const streaming = body.stream === true;
-    const response = await axios.post(`${baseUrl()}/v1/chat/completions`, body, {
+    const response = await axios.post(`${deepSeekBaseUrl()}/v1/chat/completions`, body, {
       headers: upstreamHeaders(req), responseType: streaming ? 'stream' : 'json',
       timeout: Number(process.env.DEEPSEEK_TIMEOUT_MS) || 180_000, validateStatus: () => true,
     });
@@ -95,14 +112,14 @@ export async function proxyDeepSeekChat(req: Request, res: Response, next: NextF
     return res.send(response.data);
   } catch (error) {
     const err = error as AxiosError;
-    return res.status(502).json({ error: { message: err.message || 'DeepSeek provider request failed.', type: 'api_error', code: 'provider_unavailable' } });
+    return res.status(502).json({ error: { message: providerError(err), type: 'api_error', code: 'provider_unavailable' } });
   }
 }
 
 async function adminRequest<T>(method: 'get' | 'post' | 'put', route: string, token?: string, data?: unknown): Promise<T> {
   const headers: Record<string, string> = { 'content-type': 'application/json', accept: 'application/json' };
   if (token) headers.authorization = `Bearer ${token}`;
-  const response = await axios.request<T>({ method, url: `${baseUrl()}${route}`, headers, data, timeout: 15_000, validateStatus: () => true });
+  const response = await axios.request<T>({ method, url: `${deepSeekBaseUrl()}${route}`, headers, data, timeout: 15_000, validateStatus: () => true });
   if (response.status < 200 || response.status >= 300) {
     const payload = response.data as any;
     const error = new Error(payload?.error || payload?.message || `DeepSeek service returned HTTP ${response.status}.`) as Error & { status?: number };
@@ -191,15 +208,16 @@ function toWritableConfig(config: any) {
 
 export async function getDeepSeekStatus(): Promise<ProviderStatus> {
   try {
-    const response = await axios.get(`${baseUrl()}/health`, { timeout: 3_000, validateStatus: () => true });
-    if (response.status < 200 || response.status >= 300) return { id: 'deepseek', enabled: true, healthy: false, setup: 'service_unavailable', error: `HTTP ${response.status}` };
+    const upstream = deepSeekBaseUrl();
+    const response = await axios.get(`${upstream}/health`, { timeout: 3_000, validateStatus: () => true });
+    if (response.status < 200 || response.status >= 300) return { id: 'deepseek', enabled: true, healthy: false, setup: 'service_unavailable', error: `DeepSeek returned HTTP ${response.status} from ${upstream}.`, baseUrl: upstream };
     try {
       const accounts = await getDeepSeekAccounts();
-      return { id: 'deepseek', enabled: true, healthy: true, accounts: accounts.length, setup: accounts.length ? 'ready' : 'needs_account' };
+      return { id: 'deepseek', enabled: true, healthy: true, accounts: accounts.length, setup: accounts.length ? 'ready' : 'needs_account', baseUrl: upstream };
     } catch (error) {
-      return { id: 'deepseek', enabled: true, healthy: false, setup: 'service_unavailable', error: (error as Error).message };
+      return { id: 'deepseek', enabled: true, healthy: false, setup: 'service_unavailable', error: providerError(error), baseUrl: upstream };
     }
   } catch (error) {
-    return { id: 'deepseek', enabled: true, healthy: false, setup: 'service_unavailable', error: (error as Error).message };
+    return { id: 'deepseek', enabled: true, healthy: false, setup: 'service_unavailable', error: providerError(error), baseUrl: (() => { try { return deepSeekBaseUrl(); } catch { return undefined; } })() };
   }
 }

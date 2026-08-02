@@ -4,6 +4,11 @@ const http = require('node:http');
 
 const provider = require('../dist/providers/gemini.js');
 
+test('defaults Gemini to the non-conflicting host development endpoint', () => {
+  delete process.env.GEMINI_BASE_URL;
+  assert.equal(provider.geminiBaseUrl(), 'http://127.0.0.1:18000');
+});
+
 test('routes explicit and model-selected Gemini requests', () => {
   assert.equal(provider.isGeminiRequest({ model: 'gemini-3-pro' }), true);
   assert.equal(provider.isGeminiRequest({ provider: 'gemini', model: 'custom' }), true);

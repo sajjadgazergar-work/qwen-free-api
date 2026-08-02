@@ -1,0 +1,10 @@
+# Run the managed providers in Docker while running Conduit on the host.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d deepseek gemini
+services:
+  deepseek:
+    ports:
+      - "127.0.0.1:22217:22217"
+
+  gemini:
+    ports:
+      - "127.0.0.1:18000:8000"

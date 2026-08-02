@@ -911,7 +911,8 @@ function stripToolCallsMarkup(text: string): string {
     .replace(/<tool_calls\b[^>]*>[\s\S]*?(<\/tool_calls>|$)/gi, '')
     .replace(/<invoke\s+name="[^"]+"[\s\S]*?(<\/invoke>|$)/gi, '')
     .replace(/<\|tool_calls_begin\|>[\s\S]*?(<\|tool_calls_end\|>|$)/gi, '')
-    .replace(/^Tool\s+[a-zA-Z0-9_-]+\s+does\s+not\s+exist\.?/gmi, '')
+    .replace(/(?:^|\b|\.?s\.)Tool\s+[a-zA-Z0-9_-]+\s+does\s+not\s+exists?\.?/gmi, '')
+    .replace(/^s\./g, '')
     .trim();
 }
 

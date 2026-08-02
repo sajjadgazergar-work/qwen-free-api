@@ -12,7 +12,7 @@ import fs = require('fs');
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 8000;
+const PORT = Number(process.env.PORT) || 8000;
 
 app.use(cors());
 app.use(express.json({ limit: '100mb' }));
@@ -1100,7 +1100,7 @@ app.post('/v1/chat/completions', async (req: Request, res: Response) => {
   }
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
   try {
     console.log('cwd:', process.cwd());

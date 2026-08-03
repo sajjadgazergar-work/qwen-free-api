@@ -26,14 +26,41 @@ export interface DeepSeekAccountInput {
 }
 
 export function deepSeekBaseUrl(): string {
-  const configured = (process.env.DEEPSEEK_BASE_URL || 'http://127.0.0.1:22217').trim();
-  try {
-    const url = new URL(configured);
-    if (!['http:', 'https:'].includes(url.protocol)) throw new Error('unsupported protocol');
-    return configured.replace(/\/$/, '');
-  } catch {
-    throw new Error(`Invalid DEEPSEEK_BASE_URL: ${configured || '(empty)'}`);
+  return deepSeekBaseUrls()[0];
+}
+
+export function deepSeekBaseUrls(): string[] {
+  const configured = (process.env.DEEPSEEK_BASE_URL || '').trim();
+  const candidates = [configured, 'http://127.0.0.1:22217', 'http://deepseek:22217'].filter(Boolean);
+  const unique: string[] = [];
+  for (const candidate of candidates) {
+    try {
+      const url = new URL(candidate);
+      if (!['http:', 'https:'].includes(url.protocol)) throw new Error('unsupported protocol');
+      const normalized = candidate.replace(/\/$/, '');
+      if (!unique.includes(normalized)) unique.push(normalized);
+    } catch {
+      if (candidate === configured) throw new Error(`Invalid DEEPSEEK_BASE_URL: ${configured || '(empty)'}`);
+    }
   }
+  return unique;
+}
+
+function isNetworkFailure(error: unknown): boolean {
+  const code = (error as AxiosError & { code?: string }).code;
+  return ['ENOTFOUND', 'EAI_AGAIN', 'ECONNREFUSED', 'ETIMEDOUT', 'ECONNABORTED'].includes(code || '');
+}
+
+async function tryDeepSeek<T>(operation: (baseUrl: string) => Promise<T>): Promise<T> {
+  let lastError: unknown;
+  for (const baseUrl of deepSeekBaseUrls()) {
+    try { return await operation(baseUrl); }
+    catch (error) {
+      lastError = error;
+      if (!isNetworkFailure(error)) throw error;
+    }
+  }
+  throw lastError || new Error('No DeepSeek endpoint is available.');
 }
 
 function providerError(error: unknown): string {
@@ -96,10 +123,10 @@ export async function proxyDeepSeekChat(req: Request, res: Response, next: NextF
   delete body.provider;
   try {
     const streaming = body.stream === true;
-    const response = await axios.post(`${deepSeekBaseUrl()}/v1/chat/completions`, body, {
+    const response = await tryDeepSeek(baseUrl => axios.post(`${baseUrl}/v1/chat/completions`, body, {
       headers: upstreamHeaders(req), responseType: streaming ? 'stream' : 'json',
       timeout: Number(process.env.DEEPSEEK_TIMEOUT_MS) || 180_000, validateStatus: () => true,
-    });
+    }));
     res.status(response.status);
     res.setHeader('x-conduit-provider', 'deepseek');
     const contentType = response.headers['content-type'];
@@ -119,7 +146,7 @@ export async function proxyDeepSeekChat(req: Request, res: Response, next: NextF
 async function adminRequest<T>(method: 'get' | 'post' | 'put', route: string, token?: string, data?: unknown): Promise<T> {
   const headers: Record<string, string> = { 'content-type': 'application/json', accept: 'application/json' };
   if (token) headers.authorization = `Bearer ${token}`;
-  const response = await axios.request<T>({ method, url: `${deepSeekBaseUrl()}${route}`, headers, data, timeout: 15_000, validateStatus: () => true });
+  const response = await tryDeepSeek(baseUrl => axios.request<T>({ method, url: `${baseUrl}${route}`, headers, data, timeout: 15_000, validateStatus: () => true }));
   if (response.status < 200 || response.status >= 300) {
     const payload = response.data as any;
     const error = new Error(payload?.error || payload?.message || `DeepSeek service returned HTTP ${response.status}.`) as Error & { status?: number };
@@ -222,8 +249,9 @@ function toWritableConfig(config: any) {
 
 export async function getDeepSeekStatus(): Promise<ProviderStatus> {
   try {
-    const upstream = deepSeekBaseUrl();
-    const response = await axios.get(`${upstream}/health`, { timeout: 3_000, validateStatus: () => true });
+    const result = await tryDeepSeek(async baseUrl => ({ baseUrl, response: await axios.get(`${baseUrl}/health`, { timeout: 3_000, validateStatus: () => true }) }));
+    const upstream = result.baseUrl;
+    const response = result.response;
     if (response.status < 200 || response.status >= 300) return { id: 'deepseek', enabled: true, healthy: false, setup: 'service_unavailable', error: `DeepSeek returned HTTP ${response.status} from ${upstream}.`, baseUrl: upstream };
     try {
       const accounts = await getDeepSeekAccounts();

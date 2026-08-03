@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.3.1
+
+### Fixed
+
+- Added network-aware endpoint discovery for DeepSeek and Gemini. Conduit now tries an explicit configured URL first, then the host-development and Compose endpoints when the failure is DNS, connection, or timeout related.
+- Removed the invalid DeepSeek container healthcheck that depended on `wget`, which is not present in the upstream minimal image.
+- Changed Compose startup dependencies to service-started semantics so provider initialization does not incorrectly block the gateway.
+- Forced clean builder installs to include TypeScript development dependencies even when the caller exports `NODE_ENV=production`.
+- Updated the production dependency install to use the supported `--omit=dev` form.
+
+### Verified
+
+- Compared the bundled DeepSeek adapter against current `NIyueeE/ds-free-api` and the Gemini adapter against current `Nativu5/Gemini-FastAPI` and `Sophomoresty/gemini-web2api` behavior.
+- Added regression tests for explicit URL priority and host/Compose fallback ordering.
+
 ## 0.3.0
 
 ### Added

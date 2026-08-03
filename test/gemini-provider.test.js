@@ -7,6 +7,38 @@ const provider = require('../dist/providers/gemini.js');
 test('defaults Gemini to the non-conflicting host development endpoint', () => {
   delete process.env.GEMINI_BASE_URL;
   assert.equal(provider.geminiBaseUrl(), 'http://127.0.0.1:18000');
+  assert.deepEqual(provider.geminiBaseUrls(), ['http://127.0.0.1:18000', 'http://gemini:8000']);
+});
+
+test('tries an explicit Gemini endpoint before safe local fallbacks', () => {
+  process.env.GEMINI_BASE_URL = 'https://gemini.internal.example/';
+  assert.deepEqual(provider.geminiBaseUrls(), [
+    'https://gemini.internal.example',
+    'http://127.0.0.1:18000',
+    'http://gemini:8000',
+  ]);
+  delete process.env.GEMINI_BASE_URL;
+});
+
+test('falls back to the host Gemini service after an unreachable explicit URL', async t => {
+  const server = http.createServer((_req, res) => {
+    res.setHeader('content-type', 'application/json');
+    res.end(JSON.stringify({ id: 'chatcmpl-fallback', choices: [] }));
+  });
+  try {
+    await new Promise((resolve, reject) => server.once('error', reject).listen(18000, '127.0.0.1', resolve));
+  } catch (error) {
+    if (error.code === 'EADDRINUSE') return t.skip('Port 18000 is already in use.');
+    throw error;
+  }
+  t.after(() => server.close());
+  process.env.GEMINI_BASE_URL = 'http://127.0.0.1:1';
+  const req = { body: { provider: 'gemini', model: 'gemini-3-pro', messages: [] }, headers: {}, on() {} };
+  let output;
+  const res = { status() { return this; }, setHeader() {}, send(value) { output = value; }, json(value) { output = value; } };
+  await provider.proxyGeminiChat(req, res, () => assert.fail('must proxy'));
+  assert.equal(output.id, 'chatcmpl-fallback');
+  delete process.env.GEMINI_BASE_URL;
 });
 
 test('routes explicit and model-selected Gemini requests', () => {

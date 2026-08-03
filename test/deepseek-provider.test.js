@@ -7,6 +7,38 @@ const provider = require('../dist/providers/deepseek.js');
 test('defaults DeepSeek to the host development endpoint', () => {
   delete process.env.DEEPSEEK_BASE_URL;
   assert.equal(provider.deepSeekBaseUrl(), 'http://127.0.0.1:22217');
+  assert.deepEqual(provider.deepSeekBaseUrls(), ['http://127.0.0.1:22217', 'http://deepseek:22217']);
+});
+
+test('tries an explicit DeepSeek endpoint before safe local fallbacks', () => {
+  process.env.DEEPSEEK_BASE_URL = 'https://deepseek.internal.example/';
+  assert.deepEqual(provider.deepSeekBaseUrls(), [
+    'https://deepseek.internal.example',
+    'http://127.0.0.1:22217',
+    'http://deepseek:22217',
+  ]);
+  delete process.env.DEEPSEEK_BASE_URL;
+});
+
+test('falls back to the host DeepSeek service after an unreachable explicit URL', async t => {
+  const server = http.createServer((_req, res) => {
+    res.setHeader('content-type', 'application/json');
+    res.end(JSON.stringify({ id: 'chatcmpl-fallback', choices: [] }));
+  });
+  try {
+    await new Promise((resolve, reject) => server.once('error', reject).listen(22217, '127.0.0.1', resolve));
+  } catch (error) {
+    if (error.code === 'EADDRINUSE') return t.skip('Port 22217 is already in use.');
+    throw error;
+  }
+  t.after(() => server.close());
+  process.env.DEEPSEEK_BASE_URL = 'http://127.0.0.1:1';
+  const req = { body: { provider: 'deepseek', model: 'deepseek-default', messages: [] }, headers: {}, on() {} };
+  let output;
+  const res = { status() { return this; }, setHeader() {}, send(value) { output = value; }, json(value) { output = value; } };
+  await provider.proxyDeepSeekChat(req, res, () => assert.fail('must proxy'));
+  assert.equal(output.id, 'chatcmpl-fallback');
+  delete process.env.DEEPSEEK_BASE_URL;
 });
 
 test('routes explicit and model-selected DeepSeek requests', () => {

@@ -145,7 +145,7 @@ Install Node.js 20+ and npm, then create the development environment:
 
 ```bash
 cp .env.local.example .env
-npm ci
+npm run setup
 ```
 
 Start only the managed providers with loopback ports:

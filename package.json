@@ -1,6 +1,6 @@
 {
   "name": "conduit",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Multi-provider OpenAI-compatible web AI gateway for Qwen, DeepSeek, and Gemini",
   "main": "dist/index.js",
   "type": "commonjs",
@@ -8,8 +8,10 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "ts-node src/index.ts",
+    "setup": "npm ci --include=dev",
     "test": "npm run build && node --test test/*.test.js",
-    "test:conduit": "npm run build && node --test test/*.test.js"
+    "test:conduit": "npm run build && node --test test/*.test.js",
+    "verify": "npm test"
   },
   "dependencies": {
     "ajv": "^8.20.0",

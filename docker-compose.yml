@@ -14,8 +14,10 @@ services:
     volumes:
       - ./data/qwen:/app/data
     depends_on:
-      - deepseek
-      - gemini
+      deepseek:
+        condition: service_started
+      gemini:
+        condition: service_started
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8000/health/live').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 10s
@@ -35,12 +37,9 @@ services:
       RUST_LOG: info
     expose:
       - "22217"
-    healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:22217/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-      start_period: 15s
+    # The upstream minimal image intentionally contains no wget/curl. Do not
+    # attach a healthcheck that can only report false negatives; Conduit probes
+    # the provider's /health endpoint directly and exposes it via /health/ready.
     restart: unless-stopped
 
   gemini:

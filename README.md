@@ -1,4 +1,4 @@
-# Conduit v0.3.0
+# Conduit v0.3.1
 
 Conduit is an expandable, multi-provider harness that exposes website-backed AI providers through one OpenAI-compatible API and one provider-neutral control plane.
 

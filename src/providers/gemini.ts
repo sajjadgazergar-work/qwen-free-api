@@ -18,14 +18,41 @@ export interface GeminiAccountView {
 }
 
 export function geminiBaseUrl(): string {
-  const configured = (process.env.GEMINI_BASE_URL || 'http://127.0.0.1:18000').trim();
-  try {
-    const url = new URL(configured);
-    if (!['http:', 'https:'].includes(url.protocol)) throw new Error('unsupported protocol');
-    return configured.replace(/\/$/, '');
-  } catch {
-    throw new Error(`Invalid GEMINI_BASE_URL: ${configured || '(empty)'}`);
+  return geminiBaseUrls()[0];
+}
+
+export function geminiBaseUrls(): string[] {
+  const configured = (process.env.GEMINI_BASE_URL || '').trim();
+  const candidates = [configured, 'http://127.0.0.1:18000', 'http://gemini:8000'].filter(Boolean);
+  const unique: string[] = [];
+  for (const candidate of candidates) {
+    try {
+      const url = new URL(candidate);
+      if (!['http:', 'https:'].includes(url.protocol)) throw new Error('unsupported protocol');
+      const normalized = candidate.replace(/\/$/, '');
+      if (!unique.includes(normalized)) unique.push(normalized);
+    } catch {
+      if (candidate === configured) throw new Error(`Invalid GEMINI_BASE_URL: ${configured || '(empty)'}`);
+    }
   }
+  return unique;
+}
+
+function isNetworkFailure(error: unknown): boolean {
+  const code = (error as AxiosError & { code?: string }).code;
+  return ['ENOTFOUND', 'EAI_AGAIN', 'ECONNREFUSED', 'ETIMEDOUT', 'ECONNABORTED'].includes(code || '');
+}
+
+async function tryGemini<T>(operation: (baseUrl: string) => Promise<T>): Promise<T> {
+  let lastError: unknown;
+  for (const baseUrl of geminiBaseUrls()) {
+    try { return await operation(baseUrl); }
+    catch (error) {
+      lastError = error;
+      if (!isNetworkFailure(error)) throw error;
+    }
+  }
+  throw lastError || new Error('No Gemini endpoint is available.');
 }
 
 function providerError(error: unknown): string {
@@ -77,11 +104,10 @@ export function fallbackGeminiModels() {
 }
 
 export async function geminiModels() {
-  const upstream = geminiBaseUrl();
   try {
-    const response = await axios.get(`${upstream}/v1/models`, {
+    const response = await tryGemini(baseUrl => axios.get(`${baseUrl}/v1/models`, {
       headers: upstreamHeaders(), timeout: 5_000, validateStatus: () => true,
-    });
+    }));
     if (response.status >= 200 && response.status < 300 && Array.isArray(response.data?.data)) {
       return response.data.data.map((model: any) => ({
         ...model,
@@ -95,16 +121,14 @@ export async function geminiModels() {
 
 export async function proxyGeminiChat(req: Request, res: Response, next: NextFunction) {
   if (!isGeminiRequest(req.body || {})) return next();
-  const upstream = geminiBaseUrl();
-
   const body = { ...req.body };
   delete body.provider;
   try {
     const streaming = body.stream === true;
-    const response = await axios.post(`${upstream}/v1/chat/completions`, body, {
+    const response = await tryGemini(baseUrl => axios.post(`${baseUrl}/v1/chat/completions`, body, {
       headers: upstreamHeaders(req), responseType: streaming ? 'stream' : 'json',
       timeout: Number(process.env.GEMINI_TIMEOUT_MS) || 300_000, validateStatus: () => true,
-    });
+    }));
     res.status(response.status);
     res.setHeader('x-conduit-provider', 'gemini');
     const contentType = response.headers['content-type'];
@@ -122,11 +146,11 @@ export async function proxyGeminiChat(req: Request, res: Response, next: NextFun
 }
 
 async function managementRequest<T>(method: 'get' | 'post' | 'delete', route: string, data?: unknown): Promise<T> {
-  const response = await axios.request<T>({
-    method, url: `${geminiBaseUrl()}${route}`, headers: managementHeaders(), data,
+  const response = await tryGemini(baseUrl => axios.request<T>({
+    method, url: `${baseUrl}${route}`, headers: managementHeaders(), data,
     timeout: Number(process.env.GEMINI_MANAGEMENT_TIMEOUT_MS) || 60_000,
     validateStatus: () => true,
-  });
+  }));
   if (response.status < 200 || response.status >= 300) {
     const payload = response.data as any;
     throw new Error(payload?.detail || payload?.error || payload?.message || `Gemini management API returned HTTP ${response.status}.`);
@@ -166,8 +190,9 @@ export async function removeGeminiAccount(id: string) {
 export async function getGeminiStatus() {
   let upstream: string | undefined;
   try {
-    upstream = geminiBaseUrl();
-    const response = await axios.get(`${upstream}/health`, { timeout: 5_000, validateStatus: () => true });
+    const result = await tryGemini(async baseUrl => ({ baseUrl, response: await axios.get(`${baseUrl}/health`, { timeout: 5_000, validateStatus: () => true }) }));
+    upstream = result.baseUrl;
+    const response = result.response;
     const clients = response.data?.clients && typeof response.data.clients === 'object' ? response.data.clients : {};
     const states = Object.values(clients) as boolean[];
     return {

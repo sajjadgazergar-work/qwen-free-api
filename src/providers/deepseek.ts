@@ -125,9 +125,9 @@ export async function proxyDeepSeekChat(req: Request, res: Response, next: NextF
   if (typeof body.model === 'string') {
     const m = body.model.toLowerCase();
     if (m.includes('reasoner')) {
-      body.model = 'reasoner';
+      body.model = 'deepseek-expert';
     } else {
-      body.model = 'chat';
+      body.model = 'deepseek-default';
     }
   }
 

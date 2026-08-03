@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.3.0
+
+### Added
+
+- Replaced the legacy admin page with the complete obsidian-and-copper Conduit Control Plane.
+- Added responsive Overview, Providers, Accounts, Routing, Requests, Playground, and Settings workspaces.
+- Connected provider checks, account onboarding and removal, request telemetry, log export and clearing, incident export, and playground requests to the existing Conduit APIs.
+- Added live provider readiness, runtime metrics, account filtering, health timelines, protocol compatibility, and fallback route simulation.
+
+### Fixed
+
+- Kept full-width simulator controls inside their cards on narrow and wide screens.
+- Updated TypeScript module resolution for TypeScript 5.9 compatibility.
+- Improved mobile navigation, touch targets, data-card layouts, safe-area spacing, and narrow-screen dialogs.
+
 ## 0.2.2
 
 ### Fixed

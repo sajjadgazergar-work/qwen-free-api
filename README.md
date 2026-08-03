@@ -1,4 +1,4 @@
-# Conduit v0.2.2
+# Conduit v0.3.0
 
 Conduit is an expandable, multi-provider harness that exposes website-backed AI providers through one OpenAI-compatible API and one provider-neutral control plane.
 
@@ -7,7 +7,7 @@ This release includes:
 - **Qwen** — native TypeScript provider with multimodal requests, streaming, account rotation, and schema-validated tool calling.
 - **DeepSeek** — managed Rust provider using `ds-free-api` for its specialized transport, account login, sessions, and tool-call repair.
 - **Gemini** — managed Python provider using `Gemini-FastAPI` and `gemini-webapi` for Google browser sessions, rotating-cookie refresh, model discovery, multimodal input, conversation reuse, and OpenAI-compatible tool calling.
-- **Unified dashboard** — add, inspect, and remove all three providers' accounts at `/admin`.
+- **Unified responsive control plane** — premium mobile-ready Overview, Providers, Accounts, Routing, Requests, Playground, and Settings workspaces at `/admin`, connected to the live Conduit APIs.
 - **Unified models and chat** — `GET /v1/models` merges provider models; `POST /v1/chat/completions` routes by model prefix or explicit provider.
 
 ## Architecture

@@ -14,7 +14,7 @@ model_types = ["default", "expert", "vision"]
 max_input_tokens = [1048576, 1048576, 1048576]
 max_output_tokens = [384000, 384000, 384000]
 input_character_limits = [2621440, 163840, 2621440]
-model_aliases = []
+model_aliases = ["chat", "reasoner", ""]
 
 [proxy]
 

@@ -27,14 +27,17 @@ pub(crate) fn resolve(
     web_search_options: Option<&WebSearchOptions>,
 ) -> Result<ModelResolution, String> {
     let key = model_id.to_lowercase();
-    let model_type = registry
-        .get(&key)
-        .cloned()
-        .ok_or_else(|| format!("不支持的模型: {}", model_id))?;
+    let model_type = registry.get(&key).cloned().ok_or_else(|| {
+        let mut supported: Vec<&String> = registry.keys().collect();
+        supported.sort();
+        format!(
+            "不支持的模型: '{}'. 支持的模型: {:?}",
+            model_id, supported
+        )
+    })?;
 
     let reasoning_effort = reasoning_effort.unwrap_or("high");
     let thinking_enabled = reasoning_effort != "none";
-
     let search_enabled = web_search_options.map(|_| true).unwrap_or(true);
 
     Ok(ModelResolution {

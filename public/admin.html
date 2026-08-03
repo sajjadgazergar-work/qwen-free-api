@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Conduit - AI Infrastructure Management</title>
+<title>Conduit - Unified AI Infrastructure Management</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -40,7 +40,7 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 .shell {
-  max-width: 1140px;
+  max-width: 1200px;
   margin: 0 auto;
   padding: 0 24px 60px;
 }
@@ -50,7 +50,7 @@ body {
   align-items: center;
   justify-content: space-between;
   border-bottom: 1px solid var(--line);
-  margin-bottom: 36px;
+  margin-bottom: 32px;
 }
 .brand {
   display: flex;
@@ -117,7 +117,7 @@ body {
   align-items: flex-end;
   justify-content: space-between;
   gap: 24px;
-  margin-bottom: 32px;
+  margin-bottom: 28px;
   padding-bottom: 8px;
 }
 .eyebrow {
@@ -184,7 +184,7 @@ body {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 16px;
-  margin-bottom: 36px;
+  margin-bottom: 32px;
 }
 .provider-card {
   background: var(--card);
@@ -224,89 +224,78 @@ body {
   word-break: break-word;
 }
 
-.tab-nav {
+.section-title {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 0 0 16px;
   display: flex;
-  gap: 8px;
-  border-bottom: 1px solid var(--line);
-  margin-bottom: 24px;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+  letter-spacing: -0.01em;
 }
-.tab-btn {
-  background: transparent;
-  border: none;
-  border-bottom: 2px solid transparent;
-  color: var(--text-muted);
-  padding: 10px 16px;
-  font-size: 13px;
+.section-title small {
+  font-size: 12px;
   font-weight: 500;
-  cursor: pointer;
-  transition: all 0.15s ease;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.04);
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--line-subtle);
+}
+
+.providers-layout {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+  gap: 20px;
+  margin-bottom: 36px;
+}
+
+.provider-box {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.provider-box-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--line-subtle);
+  padding-bottom: 12px;
+}
+.provider-box-head h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
   display: flex;
   align-items: center;
   gap: 8px;
 }
-.tab-btn:hover {
-  color: var(--text);
-}
-.tab-btn.active {
-  color: var(--brand);
-  border-bottom-color: var(--brand);
+.provider-tag {
+  font-size: 10px;
   font-weight: 600;
-}
-.tab-btn small {
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--text-subtle);
+  text-transform: uppercase;
   padding: 2px 6px;
   border-radius: 4px;
-  font-size: 10px;
-}
-.tab-btn.active small {
-  background: var(--brand-glow);
-  color: var(--brand);
-}
-
-.panel { display: none; }
-.panel.active { display: block; }
-
-.form-card {
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 24px;
-  margin-bottom: 24px;
-}
-.form-head {
-  margin-bottom: 20px;
-  border-bottom: 1px solid var(--line-subtle);
-  padding-bottom: 16px;
-}
-.form-head h3 {
-  margin: 0 0 4px;
-  font-size: 16px;
-  font-weight: 600;
-}
-.form-head p {
-  margin: 0;
+  background: rgba(255, 255, 255, 0.05);
   color: var(--text-muted);
-  font-size: 12px;
 }
 
-.grid2 {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-}
-.grid2.full-width {
-  grid-column: 1 / -1;
-}
 .field {
-  margin-bottom: 16px;
+  margin-bottom: 12px;
 }
 .field label {
   display: block;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--text-muted);
-  margin-bottom: 6px;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 input, select, textarea {
   width: 100%;
@@ -314,7 +303,7 @@ input, select, textarea {
   border: 1px solid var(--line);
   border-radius: 6px;
   color: var(--text);
-  padding: 10px 12px;
+  padding: 8px 12px;
   font-family: inherit;
   font-size: 13px;
   outline: none;
@@ -325,10 +314,10 @@ input:focus, select:focus, textarea:focus {
   box-shadow: 0 0 0 3px var(--brand-glow);
 }
 textarea {
-  min-height: 90px;
+  min-height: 70px;
   resize: vertical;
   font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
-  font-size: 12px;
+  font-size: 11px;
 }
 .hint {
   color: var(--text-subtle);
@@ -340,20 +329,21 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  margin-top: 8px;
 }
 .account-item {
   background: var(--bg-alt);
   border: 1px solid var(--line);
   border-radius: 6px;
-  padding: 12px 16px;
+  padding: 10px 12px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
 }
 .acc-info h4 {
   margin: 0 0 2px;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
 }
 .acc-info p {
@@ -374,6 +364,14 @@ textarea {
 .badge.ok { background: var(--success-bg); color: var(--success); }
 .badge.bad { background: var(--danger-bg); color: var(--danger); }
 .badge.warn { background: var(--warning-bg); color: var(--warning); }
+
+.logs-card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 36px;
+}
 
 .logs-table {
   width: 100%;
@@ -456,46 +454,41 @@ textarea {
 
   <section id="provider-cards" class="overview-grid"></section>
 
-  <nav class="tab-nav">
-    <button class="tab-btn active" data-tab="qwen">Qwen <small>Browser</small></button>
-    <button class="tab-btn" data-tab="deepseek">DeepSeek <small>Direct</small></button>
-    <button class="tab-btn" data-tab="gemini">Gemini <small>Cookie</small></button>
-    <button class="tab-btn" data-tab="logs">Traffic Logs <small>Live</small></button>
-  </nav>
-
   <main>
-    <section id="panel-qwen" class="panel active">
-      <div class="form-card">
-        <div class="form-head">
-          <h3>Import Qwen Session</h3>
-          <p>Sign in at chat.qwen.ai and paste your browser Cookie header or SSO token. Password is never stored.</p>
+    <div class="section-title">
+      Provider Accounts & Sessions
+      <small>Unified Single-Page View</small>
+    </div>
+
+    <div class="providers-layout">
+      <!-- Qwen Provider Box -->
+      <div class="provider-box">
+        <div class="provider-box-head">
+          <h3>Qwen <span class="provider-tag">Browser Session</span></h3>
+          <a class="btn secondary" style="padding:4px 8px;font-size:11px" href="https://chat.qwen.ai" target="_blank" rel="noopener">Open Qwen ↗</a>
         </div>
-        <div class="grid2">
+        <div>
           <div class="field">
             <label>Account Label</label>
             <input id="qwen-label" placeholder="e.g. Primary Qwen">
           </div>
           <div class="field">
             <label>Browser Session / Cookie</label>
-            <textarea id="qwen-session" placeholder="Paste complete Cookie header or tongyi_sso_ticket..."></textarea>
-            <div class="hint">Use DevTools → Network → copy request Cookie header.</div>
+            <textarea id="qwen-session" placeholder="Paste complete Cookie header..."></textarea>
+            <div class="hint">DevTools → Network → copy request Cookie header.</div>
           </div>
+          <button class="btn" style="width:100%;justify-content:center;margin-top:8px" onclick="addQwen()">+ Add Qwen Account</button>
         </div>
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <a class="btn secondary" href="https://chat.qwen.ai" target="_blank" rel="noopener">Open Qwen ↗</a>
-          <button class="btn" onclick="addQwen()">+ Add Account</button>
-        </div>
+        <div id="qwen-accounts" class="account-list"></div>
       </div>
-      <div id="qwen-accounts" class="account-list"></div>
-    </section>
 
-    <section id="panel-deepseek" class="panel">
-      <div class="form-card">
-        <div class="form-head">
-          <h3>DeepSeek Account Setup</h3>
-          <p>Enter your DeepSeek credentials used on chat.deepseek.com.</p>
+      <!-- DeepSeek Provider Box -->
+      <div class="provider-box">
+        <div class="provider-box-head">
+          <h3>DeepSeek <span class="provider-tag">Direct Credentials</span></h3>
+          <a class="btn secondary" style="padding:4px 8px;font-size:11px" href="https://chat.deepseek.com" target="_blank" rel="noopener">Open DeepSeek ↗</a>
         </div>
-        <div class="grid2">
+        <div>
           <div class="field">
             <label>Login Type</label>
             <select id="ds-login-type" onchange="toggleDsLogin()">
@@ -503,40 +496,32 @@ textarea {
               <option value="mobile">Mobile Number</option>
             </select>
           </div>
-          <div class="field">
-            <label>DeepSeek Password</label>
-            <input id="ds-password" type="password" placeholder="Password for chat.deepseek.com">
-          </div>
           <div id="ds-email-wrap" class="field">
             <label>Email Address</label>
             <input id="ds-email" type="email" placeholder="user@example.com">
           </div>
-          <div id="ds-mobile-wrap" class="grid2 full-width hidden">
-            <div class="field">
-              <label>Area Code</label>
-              <input id="ds-area" placeholder="+86">
-            </div>
-            <div class="field">
-              <label>Mobile Number</label>
+          <div id="ds-mobile-wrap" class="field hidden">
+            <div style="display:flex;gap:8px">
+              <input id="ds-area" placeholder="+86" style="width:70px">
               <input id="ds-mobile" placeholder="13800000000">
             </div>
           </div>
+          <div class="field">
+            <label>DeepSeek Password</label>
+            <input id="ds-password" type="password" placeholder="Password for chat.deepseek.com">
+          </div>
+          <button class="btn" style="width:100%;justify-content:center;margin-top:8px" onclick="addDeepSeek()">+ Add DeepSeek Account</button>
         </div>
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <a class="btn secondary" href="https://chat.deepseek.com" target="_blank" rel="noopener">Open DeepSeek ↗</a>
-          <button class="btn" onclick="addDeepSeek()">+ Add Account</button>
-        </div>
+        <div id="ds-accounts" class="account-list"></div>
       </div>
-      <div id="ds-accounts" class="account-list"></div>
-    </section>
 
-    <section id="panel-gemini" class="panel">
-      <div class="form-card">
-        <div class="form-head">
-          <h3>Gemini Cookie Session</h3>
-          <p>Paste the Cookie header from your signed-in gemini.google.com session.</p>
+      <!-- Gemini Provider Box -->
+      <div class="provider-box">
+        <div class="provider-box-head">
+          <h3>Gemini <span class="provider-tag">Cookie Session</span></h3>
+          <a class="btn secondary" style="padding:4px 8px;font-size:11px" href="https://gemini.google.com" target="_blank" rel="noopener">Open Gemini ↗</a>
         </div>
-        <div class="grid2">
+        <div>
           <div class="field">
             <label>Account Identifier</label>
             <input id="gemini-id" placeholder="e.g. Work Gemini">
@@ -545,44 +530,40 @@ textarea {
             <label>Proxy URL (Optional)</label>
             <input id="gemini-proxy" placeholder="socks5://... or http://...">
           </div>
-        </div>
-        <div class="field">
-          <label>Cookie Header Content</label>
-          <textarea id="gemini-cookie" placeholder="Paste full Cookie string containing __Secure-1PSID..."></textarea>
-        </div>
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <a class="btn secondary" href="https://gemini.google.com" target="_blank" rel="noopener">Open Gemini ↗</a>
-          <button class="btn" onclick="addGemini()">+ Add Session</button>
-        </div>
-      </div>
-      <div id="gemini-accounts" class="account-list"></div>
-    </section>
-
-    <section id="panel-logs" class="panel">
-      <div class="form-card">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-          <div>
-            <h3 style="margin:0;font-size:16px">Live Traffic & Telemetry</h3>
-            <p style="margin:4px 0 0;color:var(--text-muted);font-size:12px">Real-time HTTP requests routed through Conduit</p>
+          <div class="field">
+            <label>Cookie Header Content</label>
+            <textarea id="gemini-cookie" placeholder="Paste full Cookie string containing __Secure-1PSID..."></textarea>
           </div>
-          <button class="btn danger" onclick="clearLogs()">Clear Logs</button>
+          <button class="btn" style="width:100%;justify-content:center;margin-top:8px" onclick="addGemini()">+ Add Gemini Session</button>
         </div>
-        <div style="max-height:400px;overflow-y:auto;border:1px solid var(--line);border-radius:6px;background:var(--bg)">
-          <table class="logs-table">
-            <thead>
-              <tr>
-                <th>Time</th>
-                <th>Method</th>
-                <th>Endpoint</th>
-                <th>Status</th>
-                <th style="text-align:right">Latency</th>
-              </tr>
-            </thead>
-            <tbody id="logs-tbody"></tbody>
-          </table>
-        </div>
+        <div id="gemini-accounts" class="account-list"></div>
       </div>
-    </section>
+    </div>
+
+    <!-- Live Traffic & Telemetry Card -->
+    <div class="logs-card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <div>
+          <h3 style="margin:0;font-size:16px">Live Traffic & Telemetry</h3>
+          <p style="margin:4px 0 0;color:var(--text-muted);font-size:12px">Real-time HTTP requests routed through Conduit</p>
+        </div>
+        <button class="btn danger" onclick="clearLogs()">Clear Logs</button>
+      </div>
+      <div style="max-height:400px;overflow-y:auto;border:1px solid var(--line);border-radius:6px;background:var(--bg)">
+        <table class="logs-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Method</th>
+              <th>Endpoint</th>
+              <th>Status</th>
+              <th style="text-align:right">Latency</th>
+            </tr>
+          </thead>
+          <tbody id="logs-tbody"></tbody>
+        </table>
+      </div>
+    </div>
   </main>
 
   <footer class="footer-bar">
@@ -598,14 +579,6 @@ textarea {
 
 <script>
 const $=id=>document.getElementById(id),esc=v=>String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
-
-document.querySelectorAll('.tab-btn').forEach(b=>{
-  b.onclick=()=>{
-    document.querySelectorAll('.tab-btn,.panel').forEach(x=>x.classList.remove('active'));
-    b.classList.add('active');
-    $('panel-'+b.dataset.tab).classList.add('active');
-  }
-});
 
 function notify(m,e=false){
   const n=$('notice');
@@ -626,7 +599,7 @@ function badge(ok,label){
 }
 
 function empty(text){
-  return `<div style="text-align:center;padding:24px;color:var(--text-subtle);background:var(--bg-alt);border:1px solid var(--line);border-radius:6px">${esc(text)}</div>`;
+  return `<div style="text-align:center;padding:16px;color:var(--text-subtle);background:var(--bg-alt);border:1px solid var(--line);border-radius:6px;font-size:12px">${esc(text)}</div>`;
 }
 
 async function loadProviders(){
@@ -671,7 +644,7 @@ function renderQwen(a){
         <h4>${esc(x.label)}</h4>
         <p>${esc(x.credentialKind)} · ${esc(x.credential)}</p>
       </div>
-      <div style="display:flex;align-items:center;gap:12px">
+      <div style="display:flex;align-items:center;gap:8px">
         ${badge(x.ok,x.ok?'Active':'Cooling Down')}
         ${x.source==='dashboard'?`<button class="btn danger" style="padding:4px 8px;font-size:11px" onclick="removeQwen('${esc(x.id)}')">Delete</button>`:''}
       </div>
@@ -688,7 +661,7 @@ async function loadDeepSeek(){
           <h4>${esc(a.identity)}</h4>
           <p>State: ${esc(a.state)} · Error count: ${a.errorCount}</p>
         </div>
-        <div style="display:flex;align-items:center;gap:12px">
+        <div style="display:flex;align-items:center;gap:8px">
           ${badge(a.state!=='error',a.state)}
           <button class="btn danger" style="padding:4px 8px;font-size:11px" onclick="removeDeepSeek(${a.index})">Delete</button>
         </div>
@@ -708,7 +681,7 @@ async function loadGemini(){
           <h4>${esc(a.id)}</h4>
           <p>${a.proxy?'Proxy: '+esc(a.proxy):'Direct Connection'}</p>
         </div>
-        <div style="display:flex;align-items:center;gap:12px">
+        <div style="display:flex;align-items:center;gap:8px">
           ${badge(a.healthy,a.healthy?'Active':'Session Invalid')}
           <button class="btn danger" style="padding:4px 8px;font-size:11px" onclick="removeGemini('${esc(a.id)}')">Delete</button>
         </div>

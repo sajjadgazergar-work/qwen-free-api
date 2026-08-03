@@ -273,3 +273,11 @@ export async function getDeepSeekStatus(): Promise<ProviderStatus> {
     return { id: 'deepseek', enabled: true, healthy: false, setup: 'service_unavailable', error: providerError(error), baseUrl: (() => { try { return deepSeekBaseUrl(); } catch { return undefined; } })() };
   }
 }
+
+export async function getDeepSeekConfig() {
+  return withAdmin(async token => adminRequest<any>('get', '/admin/api/config', token));
+}
+
+export async function updateDeepSeekConfig(newConfig: any) {
+  return withAdmin(async token => adminRequest<any>('put', '/admin/api/config', token, toWritableConfig(newConfig)));
+}

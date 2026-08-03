@@ -21,9 +21,11 @@ import {
   addDeepSeekAccount,
   deepSeekModels,
   getDeepSeekAccounts,
+  getDeepSeekConfig,
   getDeepSeekStatus,
   proxyDeepSeekChat,
   removeDeepSeekAccount,
+  updateDeepSeekConfig,
 } from './providers/deepseek';
 import {
   addGeminiAccount,
@@ -941,6 +943,16 @@ app.get('/admin/api/providers/deepseek/accounts', async (_req: Request, res: Res
 
 app.post('/admin/api/providers/deepseek/accounts', async (req: Request, res: Response) => {
   try { await addDeepSeekAccount(req.body || {}); res.json({ success: true }); }
+  catch (err: any) { res.status(400).json({ success: false, error: err.message }); }
+});
+
+app.get('/admin/api/providers/deepseek/config', async (_req: Request, res: Response) => {
+  try { res.json({ success: true, config: await getDeepSeekConfig() }); }
+  catch (err: any) { res.status(502).json({ success: false, error: err.message }); }
+});
+
+app.put('/admin/api/providers/deepseek/config', async (req: Request, res: Response) => {
+  try { res.json({ success: true, result: await updateDeepSeekConfig(req.body || {}) }); }
   catch (err: any) { res.status(400).json({ success: false, error: err.message }); }
 });
 

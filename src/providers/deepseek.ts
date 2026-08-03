@@ -121,6 +121,16 @@ export async function proxyDeepSeekChat(req: Request, res: Response, next: NextF
   if (!isDeepSeekRequest(req.body || {})) return next();
   const body = { ...req.body };
   delete body.provider;
+
+  if (typeof body.model === 'string') {
+    const m = body.model.toLowerCase();
+    if (m.includes('reasoner')) {
+      body.model = 'reasoner';
+    } else {
+      body.model = 'chat';
+    }
+  }
+
   try {
     const streaming = body.stream === true;
     const response = await tryDeepSeek(baseUrl => axios.post(`${baseUrl}/v1/chat/completions`, body, {
